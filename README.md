@@ -1114,3 +1114,5 @@ Contributions of all kinds are welcome. See the [Contribution Guide](./CONTRIBUT
 ## License
 
 GNU GPLv3: See [LICENSE](./LICENSE). See [LICENSING.md](./LICENSING.md) for embedded API and commercial embedding notes.
+
+Dagu is developed by [Descarty, Inc.](https://descarty.com/en/), which also builds [Kitewell](https://descarty.com/en/product/), business automation for non-engineering teams on top of Dagu.
