@@ -448,6 +448,8 @@ func TestStagehandReattachAfterProcessExit(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
+	assert.Equal(t, handle.BrowserPID, eng.Handle().BrowserPID, "the reattached browser keeps its process")
+	assert.Equal(t, handle.BrowserStartedAt, eng.Handle().BrowserStartedAt)
 	pageURL, err := eng.CurrentURL(t.Context())
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(pageURL, "data:text/html"), pageURL)

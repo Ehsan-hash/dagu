@@ -619,6 +619,10 @@ func TestAskWaitsAndResumesSameBrowser(t *testing.T) {
 	t.Parallel()
 
 	run := newTestRun(t, pageModel(map[string]string{"The account name": `{"account":"acme"}`}))
+	// The resumed step closes the browser's whole process tree, which only
+	// the browser's process identifies.
+	run.engine.handle.BrowserPID = 4242
+	run.engine.handle.BrowserStartedAt = 1_700_000_000_000
 	waiting := run.execute(loginSteps, nil)
 	require.NoError(t, waiting.err)
 

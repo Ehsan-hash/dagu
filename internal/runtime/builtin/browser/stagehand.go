@@ -166,6 +166,10 @@ func (stagehandLauncher) Reattach(ctx context.Context, handle browserHandle, opt
 	}
 	eng.handle.ExtensionID = handle.ExtensionID
 	eng.handle.ExtensionDir = handle.ExtensionDir
+	// Closing waits for the browser's process tree, which only the recorded
+	// process identifies.
+	eng.handle.BrowserPID = handle.BrowserPID
+	eng.handle.BrowserStartedAt = handle.BrowserStartedAt
 	if err := eng.handleDownloads(ctx, opts.DownloadsDir); err != nil {
 		return nil, errors.Join(err, eng.Close(context.WithoutCancel(ctx)))
 	}
