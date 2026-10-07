@@ -24,7 +24,10 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/dirlock"
 	"github.com/dagucloud/dagu/v2/internal/cmn/masking"
 	"github.com/dagucloud/dagu/v2/internal/cmn/procutil"
+	cmnvalue "github.com/dagucloud/dagu/v2/internal/cmn/value"
 	"github.com/dagucloud/dagu/v2/internal/ir"
+	llmpkg "github.com/dagucloud/dagu/v2/internal/llm"
+	"github.com/dagucloud/dagu/v2/internal/runtime"
 	"github.com/dagucloud/dagu/v2/internal/runtime/builtin/internal/agentstep"
 )
 
@@ -422,6 +425,9 @@ func (o SessionOptions) validate() error {
 // the browser runtime asks it through. Without a model, every request
 // fails.
 func (s *Sessions) modelBridge(ctx context.Context, cfg *ir.LLMConfig, masker *masking.Masker) (*modelBridge, generateFunc, error) {
+	if _, ok := runtime.LookupEnv(ctx); !ok {
+		ctx = runtime.WithEnv(ctx, runtime.Env{Scope: sessionModelEnv(cfg)})
+	}
 	if cfg == nil {
 		noModel := func(context.Context, generateRequest) (generateResponse, error) {
 			return generateResponse{}, errNoModel
@@ -433,6 +439,40 @@ func (s *Sessions) modelBridge(ctx context.Context, cfg *ir.LLMConfig, masker *m
 		return nil, nil, err
 	}
 	return bridge, bridge.generate, nil
+}
+
+// envReference matches a ${NAME} reference, naming the variable.
+var envReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// sessionModelEnv returns the variables a session's model settings read:
+// each model's API key variable and the variables its base URL names, from
+// the process's environment. A step declares these under its DAG's secrets
+// and env; a session has no DAG, and the process's other variables stay out
+// of reach, as they do for a step.
+func sessionModelEnv(cfg *ir.LLMConfig) *cmnvalue.EnvScope {
+	scope := cmnvalue.NewEnvScope(nil, false)
+	if cfg == nil {
+		return scope
+	}
+	for _, model := range cfg.GetModels() {
+		effective := runtime.EffectiveLLMConfig(cfg, model)
+		var names []string
+		keyName := effective.APIKeyName
+		if keyName == "" {
+			if provider, err := llmpkg.ParseProviderType(effective.Provider); err == nil {
+				keyName = llmpkg.DefaultAPIKeyEnvVar(provider)
+			}
+		}
+		for _, m := range envReference.FindAllStringSubmatch(runtime.NormalizeEnvVarExpr(keyName)+effective.BaseURL, -1) {
+			names = append(names, m[1])
+		}
+		for _, name := range names {
+			if value, ok := os.LookupEnv(name); ok {
+				scope = scope.WithEntry(name, value, cmnvalue.EnvSourceSecret)
+			}
+		}
+	}
+	return scope
 }
 
 // operator returns the operator that runs a command's operation.

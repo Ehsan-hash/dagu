@@ -7,8 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	cmnconfig "github.com/dagucloud/dagu/v2/internal/cmn/config"
 	"github.com/dagucloud/dagu/v2/internal/ir"
 	llmpkg "github.com/dagucloud/dagu/v2/internal/llm"
+	"github.com/dagucloud/dagu/v2/internal/runtime/builtin/internal/agentstep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -410,4 +414,35 @@ func TestParseSessionInput(t *testing.T) {
 		_, _, err := ParseSessionInput([]byte(input))
 		assert.Equal(t, CodeInvalidInput, sessionCode(err), input)
 	}
+}
+
+// A session's model is asked with the API key held by the environment
+// variable its settings name, which no DAG declares for a session.
+func TestSessionModelReadsItsKeyFromTheEnvironment(t *testing.T) {
+	t.Setenv("DAGU_SESSION_TEST_KEY", "sk-session-1234")
+	var mu sync.Mutex
+	var authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authorization = r.Header.Get("Authorization")
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		arguments, _ := json.Marshal(`{"elementId":"/html/body/button"}`)
+		_, _ = w.Write([]byte(`{"id":"r1","object":"chat.completion","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant",` +
+			`"tool_calls":[{"id":"c1","type":"function","function":{"name":"` + agentstep.RespondToolName + `","arguments":` + string(arguments) + `}}]}}],` +
+			`"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	ts := newTestSessions(t, nil)
+	ts.sessions.newProvider = nil
+	opened := ts.open(SessionOptions{URL: "https://portal.example.com/login", LLM: &ir.LLMConfig{
+		Provider: "openai", Model: "test-model", BaseURL: server.URL, APIKeyName: "DAGU_SESSION_TEST_KEY",
+	}})
+	result, err := ts.do(opened.ID, `{"act": "Click Sign in"}`)
+	require.NoError(t, err)
+	assert.Equal(t, OperationDone, result.Status)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, "Bearer sk-session-1234", authorization)
 }

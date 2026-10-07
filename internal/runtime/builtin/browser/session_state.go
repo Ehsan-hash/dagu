@@ -235,7 +235,8 @@ func resolveVariables(state *sessionState, given map[string]SessionVariable) (se
 		env := state.EnvVariables[name]
 		value, ok := os.LookupEnv(env)
 		if !ok {
-			return values, &SessionError{Code: CodeInvalidInput, Message: fmt.Sprintf("variable %s reads the environment variable %s, which is not set", name, env)}
+			return values, &SessionError{Code: CodeInvalidInput, Message: fmt.Sprintf("variable %s reads the environment variable %s, which is not set; "+
+				"set it for every command of the session, which masks its value in what the page shows", name, env)}
 		}
 		values.all[name] = value
 		values.secrets[name] = value
