@@ -748,3 +748,35 @@ func TestStagehandFailedLaunchEndsBrowser(t *testing.T) {
 		return errors.Is(browserhost.Probe(context.Background(), "http://127.0.0.1:"+string(port[1])), browserhost.ErrUnreachable)
 	}, 10*time.Second, 200*time.Millisecond, "the failed launch ends the browser")
 }
+
+// A real page's snapshot renders as the outline the renderer is built for,
+// so a change in the tree the browser runtime reports shows up here.
+func TestStagehandSnapshotOutlinesThePage(t *testing.T) {
+	t.Parallel()
+	requireChrome(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<html><head><title>Sign in</title></head><body>
+<h1>Portal</h1>
+<form><label>Login ID <input name="id" value="typed-id"></label>
+<label>Status <select><option>All</option><option selected>Open</option></select></label>
+<button type="submit">Sign in</button></form>
+<a href="/help">Help</a></body></html>`)
+	}))
+	t.Cleanup(server.Close)
+	eng := launchBrowser(t, launchOptions{Generate: (&shopModel{}).generate})
+	require.NoError(t, eng.Goto(t.Context(), server.URL+"/login", time.Minute))
+
+	snap, err := eng.Snapshot(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "Sign in", snap.Title)
+	assert.Equal(t, server.URL+"/login", snap.URL)
+	text, _, _ := renderOutline(snap, outlineOptions{})
+	assert.Equal(t, `heading: Portal
+form
+  textbox "Login ID"
+  select "Status" = Open; options: All, Open
+  button "Sign in"
+link "Help" -> `+server.URL+`/help`, text)
+}

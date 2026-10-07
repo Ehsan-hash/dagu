@@ -88,6 +88,8 @@ type fakeEngine struct {
 	// pageText and visible describe the page that fixed checks read.
 	pageText string
 	visible  []string
+	// snapshot is the page's accessibility tree; its URL is the page's.
+	snapshot pageSnapshot
 	// downloads and downloadErr script what the next download wait reports.
 	downloads   []string
 	downloadErr error
@@ -262,6 +264,15 @@ func (e *fakeEngine) SelectorVisible(_ context.Context, selector string) (bool, 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return slices.Contains(e.visible, selector), nil
+}
+
+// Snapshot returns the scripted accessibility tree of the page.
+func (e *fakeEngine) Snapshot(context.Context) (pageSnapshot, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	snapshot := e.snapshot
+	snapshot.URL = e.url
+	return snapshot, nil
 }
 
 // WaitForDownloads reports the scripted downloads once, as if they finished

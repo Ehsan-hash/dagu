@@ -503,6 +503,29 @@ func (e *stagehandEngine) SelectorVisible(ctx context.Context, selector string) 
 	return visible, nil
 }
 
+func (e *stagehandEngine) Snapshot(ctx context.Context) (pageSnapshot, error) {
+	return boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (pageSnapshot, error) {
+		page, err := e.page(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		// Without options the tree covers iframes, as an act's does.
+		snapshot, err := page.Snapshot(ctx, nil)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		pageURL, err := page.URL(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		title, err := page.Title(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		return pageSnapshot{Tree: snapshot.FormattedTree, URLs: snapshot.URLMap, URL: pageURL, Title: title}, nil
+	})
+}
+
 // evaluate runs a JavaScript expression in the active page.
 func (e *stagehandEngine) evaluate(ctx context.Context, expression string) (json.RawMessage, error) {
 	return boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (json.RawMessage, error) {
