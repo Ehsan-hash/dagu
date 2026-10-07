@@ -197,6 +197,37 @@ func TestSessionVariables(t *testing.T) {
 	assert.Equal(t, CodeInvalidInput, sessionCode(err), "a secret value never goes to the model")
 }
 
+// An act that typed a variable's value itself reports its actions with
+// secrets masked, and the session keeps neither the actions nor a recording
+// of them.
+func TestSessionActTypingAValue(t *testing.T) {
+	const env = "DAGU_SESSION_TEST_PASSWORD"
+	t.Setenv(env, "s3cret-value")
+
+	ts := newTestSessions(t, pageModel(nil))
+	opened := ts.open(SessionOptions{URL: "https://portal.example.com/login", LLM: testModel})
+	recordFile := filepath.Join(ts.dataDir, browserhost.DataDirName, "interactive", opened.ID+".json")
+
+	ts.engine.actFills = "s3cret-value"
+	result, err := ts.do(opened.ID, `{"act": "Type %password% into the Password field", "variables": {"password": {"env": "`+env+`"}}}`)
+	require.NoError(t, err)
+	assert.False(t, result.Recorded)
+	assert.Equal(t, []string{"*******"}, result.Actions[0].Arguments)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "s3cret-value")
+
+	ts.engine.actFills = "alice-literal"
+	result, err = ts.do(opened.ID, `{"act": "Type %user% into the ID field", "variables": {"user": "alice-literal"}}`)
+	require.NoError(t, err)
+	assert.False(t, result.Recorded)
+
+	record, err := os.ReadFile(recordFile)
+	require.NoError(t, err)
+	assert.NotContains(t, string(record), "s3cret-value", "no value is kept")
+	assert.NotContains(t, string(record), "alice-literal", "no value is kept")
+}
+
 // An operation that fails is reported and kept in the history, and the
 // session stays open for the next command; one whose when does not hold is
 // skipped.

@@ -595,13 +595,17 @@ func (s *Sessions) Do(ctx context.Context, req DoRequest) (DoResult, error) {
 			if done.PageURL != "" {
 				entry.URLBefore = done.PageURL
 			}
-			result.Actions = sessionActions(done.Actions)
-			entry.Actions = done.Actions
+			result.Actions = sessionActions(done.Actions, masker)
 			if op.Act != nil {
 				entry.Recordable = done.PageURL != "" && len(done.Actions) > 0
 				if entry.Recordable && holdsValue(done.Actions, values.all) {
 					entry.Recordable = false
 					warnings = append(warnings, "the act's actions hold a variable's value, so an exported step asks the model for this act on every run")
+				}
+				// Only actions an export replays are kept, and those hold no
+				// variable's value.
+				if entry.Recordable {
+					entry.Actions = done.Actions
 				}
 				result.Recorded = entry.Recordable
 			}
@@ -1006,9 +1010,12 @@ func reserveSession(store *browserhost.Store) (string, string, error) {
 	return "", "", errors.New("could not pick an unused session ID")
 }
 
-func sessionActions(actions []recordedAction) []SessionAction {
+// sessionActions reports the actions an act performed, masking the secret
+// values their arguments hold.
+func sessionActions(actions []recordedAction, masker *masking.Masker) []SessionAction {
 	out := make([]SessionAction, 0, len(actions))
 	for _, action := range actions {
+		action.Arguments = maskAll(masker, slices.Clone(action.Arguments))
 		out = append(out, SessionAction(action))
 	}
 	return out

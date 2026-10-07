@@ -68,6 +68,9 @@ type fakeEngine struct {
 	hidden []string
 	// twoStepAct makes acts perform two actions, as a two-step act does.
 	twoStepAct bool
+	// actFills, if set, is what acts type into the element they choose, as
+	// an act that types a value itself does.
+	actFills string
 	// actLosesPage is how many of the next acts lose the connection to the
 	// page after their click lands.
 	actLosesPage int
@@ -164,7 +167,7 @@ func (e *fakeEngine) Act(ctx context.Context, instruction string, variables map[
 	e.dialogs = append(e.dialogs, e.actDialogs...)
 	e.actDialogs = nil
 	e.blocked, e.actBlocked = e.actBlocked, nil
-	generate, onAct, twoStep := e.generate, e.onAct, e.twoStepAct
+	generate, onAct, twoStep, fills := e.generate, e.onAct, e.twoStepAct, e.actFills
 	losesPage := e.actLosesPage > 0
 	if losesPage {
 		e.actLosesPage--
@@ -192,6 +195,9 @@ func (e *fakeEngine) Act(ctx context.Context, instruction string, variables map[
 		return actOutcome{}, errFakeSessionLost
 	}
 	actions := []recordedAction{{Selector: "xpath=" + choice.ElementID, Method: "click"}}
+	if fills != "" {
+		actions[0] = recordedAction{Selector: "xpath=" + choice.ElementID, Method: "fill", Arguments: []string{fills}}
+	}
 	if twoStep {
 		actions = append(actions, recordedAction{Selector: "xpath=" + choice.ElementID + "/next", Method: "click"})
 	}
