@@ -155,7 +155,7 @@ func (r *run) execute(ctx context.Context) error {
 		return errors.New("browser: ask operations are not supported on Windows, where the browser cannot outlive the step process")
 	}
 	sweepCtx, cancel := context.WithTimeout(ctx, sweepBudget)
-	_ = browserhost.Sweep(sweepCtx, r.store, time.Now(), nil)
+	_ = browserhost.SweepAll(sweepCtx, r.browser, time.Now(), nil)
 	cancel()
 
 	start, err := r.startSession(ctx)
