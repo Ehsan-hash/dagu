@@ -368,7 +368,7 @@ func (r *run) launchOptions(ctx context.Context, recordID string) (launchOptions
 		Generate:       r.bridge.generate,
 	}
 	if name := r.cfg.Browser.Profile; name != "" {
-		lease, err := acquireProfile(ctx, r.browser, name, r.store, recordID)
+		lease, err := acquireProfile(ctx, r.browser, name, recordID, true)
 		if err != nil {
 			return launchOptions{}, err
 		}

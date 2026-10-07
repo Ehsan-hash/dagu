@@ -90,7 +90,7 @@ func (r *run) resumeSession(ctx context.Context, recordID string, session *ir.Ag
 	r.refreshMasker()
 
 	if name := record.Profile; name != "" {
-		lease, err := acquireProfile(ctx, r.browser, name, r.store, recordID)
+		lease, err := acquireProfile(ctx, r.browser, name, recordID, true)
 		if err != nil {
 			return 0, err
 		}
