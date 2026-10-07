@@ -61,6 +61,9 @@ const (
 	CodeLaunchFailed    = "launch_failed"
 	CodeOperationFailed = "operation_failed"
 	CodeExportInvalid   = "export_invalid"
+	// CodeFailed reports any other failure, such as a file that could not
+	// be written.
+	CodeFailed = "failed"
 )
 
 // SessionError is a failed session command, with a code a program can act
