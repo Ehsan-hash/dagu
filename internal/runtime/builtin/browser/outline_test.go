@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,7 +126,7 @@ func TestOutlineFitsItsLimit(t *testing.T) {
 
 	text, truncated, _ := renderOutline(fixtureSnapshot(t, "orders"), outlineOptions{MaxChars: 200})
 	assert.True(t, truncated)
-	assert.LessOrEqual(t, len(text), 200+len("… outline cut: 99 more lines; narrow it with find or allow more characters"))
+	assert.LessOrEqual(t, utf8.RuneCountInString(text), 200+utf8.RuneCountInString("… outline cut: 99 more lines; narrow it with find or allow more characters"))
 	lines := strings.Split(text, "\n")
 	assert.Equal(t, `heading: 注文一覧`, lines[3])
 	assert.Regexp(t, `^… outline cut: \d+ more lines; narrow it with find or allow more characters$`, lines[len(lines)-1])
@@ -183,4 +184,31 @@ func TestOutlineReadsCRLFTrees(t *testing.T) {
 	snap.Tree = strings.ReplaceAll(strings.ReplaceAll(snap.Tree, "\r\n", "\n"), "\n", "\r\n")
 	got, _, _ := renderOutline(snap, outlineOptions{})
 	assert.Equal(t, want, got)
+}
+
+// The limit counts characters, not bytes, so a page in Japanese keeps as
+// many lines as fit in that many characters.
+func TestOutlineLimitCountsCharacters(t *testing.T) {
+	t.Parallel()
+
+	snap := fixtureSnapshot(t, "orders")
+	full, _, _ := renderOutline(snap, outlineOptions{})
+	kept := strings.Join(strings.Split(full, "\n")[:6], "\n")
+	require.Contains(t, kept, "注文一覧")
+	text, truncated, _ := renderOutline(snap, outlineOptions{MaxChars: utf8.RuneCountInString(kept) + 1})
+	assert.True(t, truncated)
+	assert.True(t, strings.HasPrefix(text, kept+"\n… outline cut: "), text)
+}
+
+// A long run of alike fields is counted by their kind's plural.
+func TestOutlineCountsAlikeFields(t *testing.T) {
+	t.Parallel()
+
+	var tree strings.Builder
+	tree.WriteString("[0-1] RootWebArea: Survey\n  [0-2] form\n")
+	for i := range 7 {
+		fmt.Fprintf(&tree, "    [0-%d] checkbox: Option %d\n", 10+i, i+1)
+	}
+	text, _, _ := renderOutline(pageSnapshot{Tree: tree.String()}, outlineOptions{})
+	assert.Contains(t, text, "… 4 more checkboxes like these")
 }

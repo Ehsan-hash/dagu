@@ -424,7 +424,7 @@ func plural(line string) string {
 	switch {
 	case kind == "text":
 		return "lines"
-	case strings.HasSuffix(kind, "s"):
+	case strings.HasSuffix(kind, "s"), strings.HasSuffix(kind, "x"):
 		return kind + "es"
 	}
 	return kind + "s"
@@ -476,8 +476,10 @@ func findOutlineLines(entries []*outlineEntry, find string) ([]string, int) {
 // fitOutline joins lines, cutting whole lines to stay within maxChars.
 func fitOutline(lines []string, maxChars int) (string, bool) {
 	var b strings.Builder
+	chars := 0
 	for i, line := range lines {
-		if maxChars > 0 && b.Len()+len(line)+1 > maxChars {
+		chars += utf8.RuneCountInString(line) + 1
+		if maxChars > 0 && chars > maxChars {
 			fmt.Fprintf(&b, "… outline cut: %d more lines; narrow it with find or allow more characters", len(lines)-i)
 			return b.String(), true
 		}
