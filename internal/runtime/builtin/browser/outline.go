@@ -58,7 +58,7 @@ func parseSnapshotTree(tree string) []*outlineNode {
 	// open holds the last node seen at each depth.
 	var open []*outlineNode
 	for line := range strings.SplitSeq(tree, "\n") {
-		m := snapshotLine.FindStringSubmatch(line)
+		m := snapshotLine.FindStringSubmatch(strings.TrimSuffix(line, "\r"))
 		if m == nil {
 			continue
 		}

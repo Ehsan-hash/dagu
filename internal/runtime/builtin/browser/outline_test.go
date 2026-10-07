@@ -172,3 +172,15 @@ func TestOutlineChoicesAndScriptLinks(t *testing.T) {
 link "Open menu"
 link "Name: with colon" -> https://example.com/a`, text)
 }
+
+// A tree whose lines end in CRLF, as a fixture checked out on Windows has,
+// reads as the same tree.
+func TestOutlineReadsCRLFTrees(t *testing.T) {
+	t.Parallel()
+
+	snap := fixtureSnapshot(t, "login")
+	want, _, _ := renderOutline(snap, outlineOptions{})
+	snap.Tree = strings.ReplaceAll(strings.ReplaceAll(snap.Tree, "\r\n", "\n"), "\n", "\r\n")
+	got, _, _ := renderOutline(snap, outlineOptions{})
+	assert.Equal(t, want, got)
+}
