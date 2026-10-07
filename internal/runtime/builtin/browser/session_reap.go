@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	// reapPoll is how long the watchdog of a session waits before looking
-	// again while a command uses the session.
-	reapPoll = time.Minute
+	// reapPoll is the longest the watchdog of a session waits before
+	// looking at the session again, so it exits soon after the session is
+	// closed or ended elsewhere.
+	reapPoll = 10 * time.Second
 	// reapMargin lets a deadline pass before the watchdog looks at it.
 	reapMargin = 100 * time.Millisecond
 )
@@ -45,7 +46,7 @@ func (s *Sessions) Reap(ctx context.Context, id string) error {
 		}
 		wait := reapPoll
 		if record.State == browserhost.StateInteractive && !record.Deadline.IsZero() {
-			wait = max(record.Deadline.Sub(s.now()), 0) + reapMargin
+			wait = min(wait, max(record.Deadline.Sub(s.now()), 0)+reapMargin)
 		}
 		timer := time.NewTimer(wait)
 		select {

@@ -141,6 +141,11 @@ func sweepSessions(ctx context.Context, store *Store, now time.Time) error {
 // browser again, unless one of its commands holds it. It reports whether
 // the session was retired.
 func RetireAbandoned(ctx context.Context, store *Store, id string, now time.Time) (bool, error) {
+	// A session in use is left without taking its lock, which a command
+	// starting meanwhile would find held.
+	if record, err := store.Load(id); err != nil || !sessionAbandoned(record, now) {
+		return false, nil
+	}
 	lock := store.SessionLock(id)
 	if err := lock.TryLock(); err != nil {
 		return false, nil
