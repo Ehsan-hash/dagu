@@ -211,7 +211,7 @@ Load only the file you need:
 
 - `references/steptypes.md` when choosing an action or checking action-specific behavior such as `human.task`, `dag.run`, `parallel`, `git.worktree.*`, `jq.filter`, `js.run`, `file.*`, `xlsx.*`, `state.*`, `template.render`, `chat.completion`, `browser.*`, or `computer.*`
 - `references/dagu-action.md` when creating a reusable `dagu-action.yaml` package or checking action input/output schema behavior
-- `references/cli.md` when choosing or using Dagu CLI commands, including workflow inspection, execution, and cleanup operations
+- `references/cli.md` when choosing or using Dagu CLI commands, including workflow inspection, execution, and cleanup operations, and browser sessions for building a browser step on a site you have not seen
 - `references/context.md` when using `${context.*}` metadata references or declared step `outputs:`
 - `references/build.md` when creating or troubleshooting a `type: build` file workflow, path references, reuse decisions, or `--no-reuse`
 - `references/file-dependencies.md` when a DAG needs scripts, configuration, or other files from its working directory
@@ -1455,6 +1455,7 @@ steps:
 
 Browser behavior:
 
+- Before writing a browser step for a page you have not seen, work the page in a browser session (`dagu browser session`, see `references/cli.md`) with the same operations, looking at its outline after each, instead of guessing at its fields, buttons, or addresses. Export what worked: the step comes out with its acts recorded, so its first run replays them. With `browser.profile`, sign-in operations run only while the site asks for them, so guard them with `when: {selector: ...}` on the sign-in form.
 - Each `do` item sets exactly one of `goto`, `act`, `extract`, `expect`, `wait` (`selector` or `duration`), `screenshot`, or `ask`, plus optional `when` (skip unless it holds) and `timeout`.
 - An `act` performs one action: "Sign in with %user% and %password%" types into one field and stops. Write one act per field and one for the button. A dropdown that is not a native `<select>` takes two acts: one opens it, the next picks the option.
 - `expect` and `when` take a statement the model judges, or a fixed check `{text}`, `{selector}`, or `{url}` that reads the page without a model call. Prefer fixed checks for monitoring; they give the same result on every run. A fixed `when` reads the page once; add `within: 10s` when the page may still be loading.
@@ -1943,6 +1944,19 @@ Clear the recorded `act` operations that browser steps replay, so the next run a
 
 ```sh
 dagu browser cache clear <dag> [--step <id>]
+```
+
+### dagu browser session
+
+Work a site in a browser kept open between commands, then turn what worked into a `browser.run` step. Each `do` runs one operation, read from stdin in the form of a `with.do` item, exactly as a step would, and reports what it did, the actions an act performed, what an extract read, and the page next with its outline. `describe` outlines the page without a model: fields with their labels, selects with their options, buttons, links with their addresses, tables and lists. `export` builds the step from the operations that succeeded and writes their act recordings to the step's replay cache, so its first run on this host replays them without a model request. Variable values go on stdin under `variables`; `{"env": NAME}` is read from the environment on every command and masked, a plain string serves one command. Every command prints one JSON object; a failure prints `{"error": {"code", "message"}}` and exits 1. A session closes its browser when idle past `--idle-timeout` (default `30m`); its history can be exported for a day after.
+
+```sh
+dagu browser session open [URL] [--provider P --model M | --llm '<llm block>'] [--profile N] [--headed] [--viewport WxH] [--allowed-domain D]... [--idle-timeout 30m]
+echo '{"act": "Click Sign in"}' | dagu browser session do <id>
+dagu browser session describe <id> [--find TEXT] [--format text] [--screenshot NAME]
+dagu browser session export <id> --dag <name|file> --step <id> [--skip N]... [--dry-run] [--close] [--format yaml]
+dagu browser session close <id> [--force]
+dagu browser session list
 ```
 
 ### dagu computer check

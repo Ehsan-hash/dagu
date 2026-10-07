@@ -79,6 +79,7 @@ It must not be treated as product behavior until implementation catches up.
 | [076: CLI Run Parameter Input](076-cli-run-params.md) | Implemented for local commands |
 | [077: XLSX Actions](077-xlsx.md) | Implemented |
 | [078: JS Run Action](078-js-run.md) | Implemented |
+| [079: Browser Sessions](079-browser-session.md) | Implemented for local commands |
 
 **Writing guidelines:**
 

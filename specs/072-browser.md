@@ -210,12 +210,15 @@ also clears its cache; removing only older runs keeps it. Each clears the cache
 on its own host only. After a clear, the next run of the step makes a model
 request and records again.
 
+`dagu browser session export` writes the recordings of the acts a browser
+session ran for a step that has not run yet (Spec 079).
+
 ### Profiles
 
 `browser.profile` names a persistent browser profile kept on the executing
 host. Cookies and storage survive across runs on that host. Runs that use the
 same profile run one at a time; a run fails immediately when another run
-waiting for input holds the profile.
+waiting for input, or a browser session (Spec 079), holds the profile.
 
 ### Human input
 

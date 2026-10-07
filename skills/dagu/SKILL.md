@@ -208,7 +208,7 @@ Load only the file you need:
 
 - `references/steptypes.md` when choosing an action or checking action-specific behavior such as `human.task`, `dag.run`, `parallel`, `git.worktree.*`, `jq.filter`, `js.run`, `file.*`, `xlsx.*`, `state.*`, `template.render`, `chat.completion`, `browser.*`, or `computer.*`
 - `references/dagu-action.md` when creating a reusable `dagu-action.yaml` package or checking action input/output schema behavior
-- `references/cli.md` when choosing or using Dagu CLI commands, including workflow inspection, execution, and cleanup operations
+- `references/cli.md` when choosing or using Dagu CLI commands, including workflow inspection, execution, and cleanup operations, and browser sessions for building a browser step on a site you have not seen
 - `references/context.md` when using `${context.*}` metadata references or declared step `outputs:`
 - `references/build.md` when creating or troubleshooting a `type: build` file workflow, path references, reuse decisions, or `--no-reuse`
 - `references/file-dependencies.md` when a DAG needs scripts, configuration, or other files from its working directory
