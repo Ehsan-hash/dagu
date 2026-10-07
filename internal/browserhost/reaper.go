@@ -130,26 +130,31 @@ func sweepSessions(ctx context.Context, store *Store, now time.Time) error {
 			continue
 		}
 		if sessionAbandoned(record, now) {
-			errs = append(errs, retireIdle(ctx, store, record.ID, now))
+			_, err := RetireAbandoned(ctx, store, record.ID, now)
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// retireIdle retires the session id unless one of its commands holds it or
-// renewed it meanwhile.
-func retireIdle(ctx context.Context, store *Store, id string, now time.Time) error {
+// RetireAbandoned retires the browser session id when nothing will use its
+// browser again, unless one of its commands holds it. It reports whether
+// the session was retired.
+func RetireAbandoned(ctx context.Context, store *Store, id string, now time.Time) (bool, error) {
 	lock := store.SessionLock(id)
 	if err := lock.TryLock(); err != nil {
-		return nil
+		return false, nil
 	}
 	defer func() { _ = lock.Unlock() }()
+	// A command may have renewed the session since it was last read.
 	record, err := store.Load(id)
 	if err != nil || !sessionAbandoned(record, now) {
-		return nil
+		return false, nil
 	}
-	_, err = Retire(ctx, store, record, now.Add(SessionRetention))
-	return err
+	if _, err := Retire(ctx, store, record, now.Add(SessionRetention)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // sessionAbandoned reports whether nothing will use a browser session's

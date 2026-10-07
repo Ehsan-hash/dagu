@@ -174,6 +174,7 @@ Examples:
 		browserSessionExportCommand(),
 		browserSessionCloseCommand(),
 		browserSessionListCommand(),
+		browserSessionReapCommand(),
 	)
 	return cmd
 }
@@ -213,7 +214,38 @@ func runBrowserSessionOpen(ctx *Context, args []string) error {
 	if err != nil {
 		return writeSessionError(ctx, err)
 	}
+	if err := startSessionWatchdog(ctx, opened.ID); err != nil {
+		opened.Warnings = append(opened.Warnings, "the session closes when idle only when a later session command, browser step, or server sees it: "+err.Error())
+	}
 	return writeIndentedJSON(ctx.Command.OutOrStdout(), opened)
+}
+
+// startSessionWatchdog starts a process of its own that closes the
+// session's browser once the session is idle past its timeout.
+func startSessionWatchdog(ctx *Context, id string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find this executable: %w", err)
+	}
+	args := []string{"browser", "session", "reap", id}
+	// The watchdog reads the same configuration as this command.
+	for _, name := range []string{configFlag.name, daguHomeFlag.name} {
+		if value, _ := ctx.Command.Flags().GetString(name); value != "" {
+			args = append(args, "--"+name, value)
+		}
+	}
+	return startDetached(executable, args)
+}
+
+func browserSessionReapCommand() *cobra.Command {
+	return NewCommand(&cobra.Command{
+		Use:    "reap <session ID>",
+		Short:  "Close a browser session's browser once it is idle past its timeout",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+	}, nil, func(ctx *Context, args []string) error {
+		return browser.NewSessions().Reap(ctx, args[0])
+	})
 }
 
 func sessionOpenOptions(ctx *Context, args []string) (browser.SessionOptions, error) {

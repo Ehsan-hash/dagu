@@ -367,6 +367,9 @@ func (s *Sessions) Open(ctx context.Context, opts SessionOptions) (OpenResult, e
 		return OpenResult{}, errors.Join(err, closeSession(ctx, eng, store, record))
 	}
 	var warnings []string
+	if warning := jobWarning(); warning != "" {
+		warnings = append(warnings, warning)
+	}
 	op := s.operator(eng, bridge, state, nil, workDir, &warnings)
 	if opts.URL != "" {
 		if _, err := op.gotoURL(ctx, -1, opts.URL, defaultOperationTimeout); err != nil {
