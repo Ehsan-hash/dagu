@@ -283,9 +283,10 @@ func (e *exportedSession) exportVariables(state sessionState, used map[string]bo
 			variable.Value = "${" + env + "}"
 			variable.Note = fmt.Sprintf("declare %s under the DAG's secrets, such as {name: %s, provider: env, key: %s}", env, env, env)
 		} else {
-			param := strings.ToUpper(name)
-			variable.Value = "${" + param + "}"
-			variable.Note = fmt.Sprintf("set %s, such as in the DAG's params, to the value the session was given", param)
+			// A parameter of the same name, which no system variable such
+			// as USER shadows.
+			variable.Value = "${" + name + "}"
+			variable.Note = fmt.Sprintf("give the DAG a parameter %s holding the value the session was given", name)
 		}
 		e.step.With.Variables[name] = variable.Value
 		e.variables = append(e.variables, variable)

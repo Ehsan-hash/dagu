@@ -74,7 +74,7 @@ func TestExportedStepReplaysTheSession(t *testing.T) {
 		"with": {
 			"url": "https://portal.example.com/login",
 			"browser": {"profile": "portal"},
-			"variables": {"password": "${`+env+`}", "user": "${USER}"},
+			"variables": {"password": "${`+env+`}", "user": "${user}"},
 			"do": [
 				{"act": "Type %user% into the Login ID field"},
 				{"act": "Type %password% into the Password field"},
@@ -96,7 +96,7 @@ func TestExportedStepReplaysTheSession(t *testing.T) {
 	assert.Equal(t, 3, exported.Recordings)
 	assert.Equal(t, []ExportedVariable{
 		{Name: "password", Value: "${" + env + "}", Note: "declare " + env + " under the DAG's secrets, such as {name: " + env + ", provider: env, key: " + env + "}"},
-		{Name: "user", Value: "${USER}", Note: "set USER, such as in the DAG's params, to the value the session was given"},
+		{Name: "user", Value: "${user}", Note: "give the DAG a parameter user holding the value the session was given"},
 	}, exported.Variables)
 	assert.Equal(t, testModel, exported.LLM)
 	assert.Empty(t, exported.Warnings)
@@ -109,7 +109,7 @@ func TestExportedStepReplaysTheSession(t *testing.T) {
 	// the step runs on its own profile.
 	ts.clock = ts.clock.Add(time.Second)
 	require.NoError(t, ts.sessions.Close(ts.context(), opened.ID, false))
-	withJSON := strings.NewReplacer("${"+env+"}", "s3cret-value", "${USER}", "alice").Replace(string(mustJSON(t, exported.Step.With)))
+	withJSON := strings.NewReplacer("${"+env+"}", "s3cret-value", "${user}", "alice").Replace(string(mustJSON(t, exported.Step.With)))
 	run := newTestRun(t, model)
 	run.dataDir = ts.dataDir
 	run.engine.pageText = "Orders"
@@ -213,7 +213,7 @@ func TestExportedStepAsYAML(t *testing.T) {
 
 	step := ExportedStep{ID: "shop", Action: "browser.run", With: ExportedWith{
 		URL:       "https://portal.example.com/login",
-		Variables: map[string]string{"user": "${USER}"},
+		Variables: map[string]string{"user": "${user}"},
 		Do:        []json.RawMessage{json.RawMessage(`{"act":"Type %user% into the Login ID field"}`), json.RawMessage(`{"expect":{"text":"Orders"}}`)},
 	}}
 	text, err := step.YAML()
@@ -223,7 +223,7 @@ func TestExportedStepAsYAML(t *testing.T) {
   with:
     url: https://portal.example.com/login
     variables:
-      user: ${USER}
+      user: ${user}
     do:
     - act: Type %user% into the Login ID field
     - expect:
