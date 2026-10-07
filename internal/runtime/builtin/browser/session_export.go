@@ -11,7 +11,9 @@ import (
 	"maps"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dagucloud/dagu/v2/internal/cmn/replaycache"
@@ -311,12 +313,18 @@ func (e *exportedSession) check() error {
 	if err == nil {
 		return nil
 	}
-	message := err.Error()
-	for index, sessionIndex := range slices.Backward(e.sessionIndex) {
-		message = strings.ReplaceAll(message, fmt.Sprintf("do[%d]", index), fmt.Sprintf("operation %d", sessionIndex))
-	}
+	message := doReference.ReplaceAllStringFunc(err.Error(), func(ref string) string {
+		index, _ := strconv.Atoi(doReference.FindStringSubmatch(ref)[1])
+		if index >= len(e.sessionIndex) {
+			return ref
+		}
+		return fmt.Sprintf("operation %d", e.sessionIndex[index])
+	})
 	return &SessionError{Code: CodeExportInvalid, Message: message + "; leave an operation out with skip"}
 }
+
+// doReference is how a step's checks name one of its operations.
+var doReference = regexp.MustCompile(`do\[(\d+)\]`)
 
 func (e *exportedSession) warnf(format string, args ...any) {
 	e.warnings = append(e.warnings, fmt.Sprintf(format, args...))
