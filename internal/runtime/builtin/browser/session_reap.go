@@ -34,6 +34,7 @@ func (s *Sessions) Reap(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	failed := false
 	for {
 		record, err := store.Load(id)
 		switch {
@@ -45,7 +46,8 @@ func (s *Sessions) Reap(ctx context.Context, id string) error {
 			return nil
 		}
 		wait := reapPoll
-		if record.State == browserhost.StateInteractive && !record.Deadline.IsZero() {
+		// A browser that would not close is tried again a full poll later.
+		if !failed && record.State == browserhost.StateInteractive && !record.Deadline.IsZero() {
 			wait = min(wait, max(record.Deadline.Sub(s.now()), 0)+reapMargin)
 		}
 		timer := time.NewTimer(wait)
@@ -55,7 +57,7 @@ func (s *Sessions) Reap(ctx context.Context, id string) error {
 			return ctx.Err()
 		case <-timer.C:
 		}
-		// A browser that would not close is tried again on the next turn.
-		_, _ = browserhost.RetireAbandoned(ctx, store, id, s.now())
+		_, err = browserhost.RetireAbandoned(ctx, store, id, s.now())
+		failed = err != nil
 	}
 }
