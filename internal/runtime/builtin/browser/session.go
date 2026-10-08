@@ -738,9 +738,21 @@ func (s *Sessions) Describe(ctx context.Context, req DescribeRequest) (DescribeR
 	return result, nil
 }
 
-// Close closes a session's browser and removes the session. With force, it
-// does not wait for a command that holds the session.
-func (s *Sessions) Close(ctx context.Context, id string, force bool) error {
+// CloseRequest closes a session.
+type CloseRequest struct {
+	ID string
+	// Force closes the session even while a command holds it.
+	Force bool
+	// Keep ends the session instead of removing it: its browser closes and
+	// its profile is free, and its history can still be exported for as long
+	// as an ended session's.
+	Keep bool
+}
+
+// Close closes a session's browser and removes the session, or with Keep
+// ends it.
+func (s *Sessions) Close(ctx context.Context, req CloseRequest) error {
+	id := req.ID
 	if !sessionIDPattern.MatchString(id) {
 		return sessionNotFound(id)
 	}
@@ -749,7 +761,7 @@ func (s *Sessions) Close(ctx context.Context, id string, force bool) error {
 		return err
 	}
 	lock := store.SessionLock(id)
-	if err := lock.TryLock(); err != nil && !force {
+	if err := lock.TryLock(); err != nil && !req.Force {
 		return sessionBusy(id, err)
 	}
 	record, err := store.Load(id)
@@ -758,6 +770,14 @@ func (s *Sessions) Close(ctx context.Context, id string, force bool) error {
 		return sessionNotFound(id)
 	}
 	if err != nil {
+		return err
+	}
+	if req.Keep {
+		defer func() { _ = lock.Unlock() }()
+		if record.State == browserhost.StateEnded {
+			return nil
+		}
+		_, err := browserhost.Retire(ctx, store, record, s.now().Add(browserhost.SessionRetention))
 		return err
 	}
 	if record.State != browserhost.StateEnded {

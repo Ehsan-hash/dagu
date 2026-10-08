@@ -401,7 +401,7 @@ func TestSessionCloseAndList(t *testing.T) {
 	assert.Equal(t, "portal", summaries[0].Profile)
 	assert.Equal(t, ts.engine.handle.CDPURL, summaries[0].CDPURL)
 
-	require.NoError(t, ts.sessions.Close(ts.context(), first.ID, false))
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: first.ID}))
 	_, err = ts.store().Load(first.ID)
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	assert.NoDirExists(t, ts.store().WorkDir(first.ID))
@@ -411,8 +411,33 @@ func TestSessionCloseAndList(t *testing.T) {
 	require.Len(t, summaries, 1)
 	assert.Equal(t, second.ID, summaries[0].ID)
 
-	err = ts.sessions.Close(ts.context(), first.ID, false)
+	err = ts.sessions.Close(ts.context(), CloseRequest{ID: first.ID})
 	assert.Equal(t, CodeSessionNotFound, sessionCode(err))
+}
+
+// Closing with keep ends the session: its browser closes and its profile is
+// free, while its history can still be exported until it is removed.
+func TestSessionCloseKeepsHistory(t *testing.T) {
+	t.Parallel()
+
+	ts := newTestSessions(t, pageModel(nil))
+	opened := ts.open(SessionOptions{URL: "https://portal.example.com/login", Profile: "portal", LLM: testModel})
+	_, err := ts.do(opened.ID, `{"act": "Click Sign in"}`)
+	require.NoError(t, err)
+
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: opened.ID, Keep: true}))
+	assert.Equal(t, browserhost.StateEnded, ts.record(opened.ID).State)
+	_, err = ts.do(opened.ID, `{"act": "Click Orders"}`)
+	assert.Equal(t, CodeSessionEnded, sessionCode(err))
+	exported, err := ts.sessions.Export(ts.context(), ExportRequest{ID: opened.ID, DAG: "orders", Step: "shop", DryRun: true})
+	require.NoError(t, err)
+	assert.Len(t, exported.Ops, 1)
+	ts.open(SessionOptions{URL: "https://portal.example.com/login", Profile: "portal"})
+
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: opened.ID, Keep: true}), "an ended session stays ended")
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: opened.ID}))
+	_, err = ts.store().Load(opened.ID)
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // A session holds its profile between commands, so a second session cannot

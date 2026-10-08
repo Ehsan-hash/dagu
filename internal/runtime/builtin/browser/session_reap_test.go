@@ -61,6 +61,6 @@ func TestSessionWatchdogEndsWithItsSession(t *testing.T) {
 	ts := newTestSessions(t, pageModel(nil))
 	ts.sessions.now = time.Now
 	opened := ts.open(SessionOptions{URL: "https://portal.example.com/login", IdleTimeout: 300 * time.Millisecond})
-	require.NoError(t, ts.sessions.Close(ts.context(), opened.ID, false))
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: opened.ID}))
 	waitReap(t, ts.reap(opened.ID))
 }

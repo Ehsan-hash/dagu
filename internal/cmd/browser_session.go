@@ -141,6 +141,11 @@ var (
 		isBool: true,
 		usage:  "Close the session even while another command holds it",
 	}
+	sessionKeepFlag = commandLineFlag{
+		name:   "keep",
+		isBool: true,
+		usage:  "End the session but keep its history for export",
+	}
 )
 
 func browserSessionCommand() *cobra.Command {
@@ -499,7 +504,7 @@ func runBrowserSessionExport(ctx *Context, args []string) error {
 		return writeSessionError(ctx, err)
 	}
 	if closeAfter, _ := flags.GetBool(sessionCloseAfterFlag.name); closeAfter {
-		if err := sessions.Close(ctx, req.ID, false); err != nil {
+		if err := sessions.Close(ctx, browser.CloseRequest{ID: req.ID}); err != nil {
 			result.Warnings = append(result.Warnings, "close the session: "+err.Error())
 		}
 	}
@@ -533,16 +538,22 @@ func browserSessionCloseCommand() *cobra.Command {
 		Long: `Close the session's browser and remove the session with its history and
 files. Export the session first to keep what it did.
 
+With --keep, the session ends instead: its browser closes and its profile
+is free for a step, and its history can still be exported for a day.
+
 Example:
   dagu browser session close ab2cd3ef4g
+  dagu browser session close ab2cd3ef4g --keep
 `,
 		Args: cobra.ExactArgs(1),
-	}, []commandLineFlag{sessionForceFlag}, runBrowserSessionClose)
+	}, []commandLineFlag{sessionForceFlag, sessionKeepFlag}, runBrowserSessionClose)
 }
 
 func runBrowserSessionClose(ctx *Context, args []string) error {
-	force, _ := ctx.Command.Flags().GetBool(sessionForceFlag.name)
-	if err := browser.NewSessions().Close(ctx, args[0], force); err != nil {
+	flags := ctx.Command.Flags()
+	force, _ := flags.GetBool(sessionForceFlag.name)
+	keep, _ := flags.GetBool(sessionKeepFlag.name)
+	if err := browser.NewSessions().Close(ctx, browser.CloseRequest{ID: args[0], Force: force, Keep: keep}); err != nil {
 		return writeSessionError(ctx, err)
 	}
 	return writeIndentedJSON(ctx.Command.OutOrStdout(), map[string]any{"id": args[0], "closed": true})

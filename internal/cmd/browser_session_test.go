@@ -66,6 +66,7 @@ func TestBrowserSessionCommands(t *testing.T) {
 			{"describe", "ab2cd3ef4g"},
 			{"export", "ab2cd3ef4g", "--dag", "orders", "--step", "fetch"},
 			{"close", "ab2cd3ef4g"},
+			{"close", "ab2cd3ef4g", "--keep"},
 		} {
 			out, err := runSessionCommand(th, `{"goto": "https://example.com"}`, args...)
 			require.Error(t, err, args)

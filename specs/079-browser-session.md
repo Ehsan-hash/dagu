@@ -32,7 +32,7 @@ Every command prints one JSON object to stdout. A command that fails prints
 | `do <ID>` | Run one operation, read from stdin, in the session |
 | `describe <ID>` | Report what the session's page shows |
 | `export <ID>` | Build a `browser.run` step from the session's history |
-| `close <ID>` | Close the browser and remove the session |
+| `close <ID>` | Close the browser and remove the session, or end it with `--keep` |
 | `list` | List the host's sessions |
 
 `open` accepts `--profile`, `--headed`, `--viewport WxH`, `--executable`,
@@ -53,8 +53,9 @@ when the process running a command died.
 
 A session whose browser closed this way ends: `do` and `describe` fail with
 `session_ended`, and its history stays readable, so `export` and `list`
-still work, for 24 hours. `close` removes the session at once, with its
-history.
+still work, for 24 hours. `close --keep` ends a session the same way at
+once, freeing its profile for a step. `close` removes the session at once,
+with its history.
 
 Commands on one session run one at a time; a command that finds the
 session in use fails at once with `session_busy`.

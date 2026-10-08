@@ -108,7 +108,7 @@ func TestExportedStepReplaysTheSession(t *testing.T) {
 	// The DAG fills in the references; the session's profile is in use, so
 	// the step runs on its own profile.
 	ts.clock = ts.clock.Add(time.Second)
-	require.NoError(t, ts.sessions.Close(ts.context(), opened.ID, false))
+	require.NoError(t, ts.sessions.Close(ts.context(), CloseRequest{ID: opened.ID}))
 	withJSON := strings.NewReplacer("${"+env+"}", "s3cret-value", "${user}", "alice").Replace(string(mustJSON(t, exported.Step.With)))
 	run := newTestRun(t, model)
 	run.dataDir = ts.dataDir
