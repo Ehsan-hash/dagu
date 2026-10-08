@@ -780,3 +780,26 @@ form
   button "Sign in"
 link "Help" -> `+server.URL+`/help`, text)
 }
+
+// A model call still running when the engine detaches ends with it, so the
+// kept browser's runtime closes and the next engine reattaches at once.
+func TestStagehandDetachEndsAModelCallItWaitsOn(t *testing.T) {
+	t.Parallel()
+	hanging := func(ctx context.Context, _ generateRequest) (generateResponse, error) {
+		<-ctx.Done()
+		return generateResponse{}, ctx.Err()
+	}
+	eng := launchBrowser(t, launchOptions{Generate: hanging})
+	require.NoError(t, eng.Goto(t.Context(), "data:text/html,"+strings.ReplaceAll(shopPage, "#", "%23"), time.Minute))
+	_, err := eng.Act(t.Context(), "Click Add to cart", nil, 2*time.Second)
+	require.Error(t, err, "the act waits on a model that never answers")
+	require.NoError(t, eng.Detach(t.Context()), "the runtime closes once its model call ends")
+
+	var reattached engine
+	err = withStartupSlot(func() (err error) {
+		reattached, err = stagehandLauncher{}.Reattach(t.Context(), eng.Handle(), launchOptions{Generate: (&shopModel{}).generate})
+		return err
+	})
+	require.NoError(t, err)
+	require.NoError(t, reattached.Goto(t.Context(), "data:text/html,"+strings.ReplaceAll(shopPage, "#", "%23"), time.Minute))
+}
