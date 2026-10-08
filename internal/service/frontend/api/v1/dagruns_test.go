@@ -318,28 +318,7 @@ func TestLogPageLimits(t *testing.T) {
 			}))
 			logPath := filepath.Join(t.TempDir(), "output.log")
 			require.NoError(t, os.WriteFile(logPath, []byte(strings.Repeat("line\n", 20000)), 0o600))
-			dag := &ir.DAG{Name: "log-limits", Steps: []ir.Step{{Name: "main"}}}
-			root := ir.NewDAGRunRef(dag.Name, "root")
-			for _, runID := range []string{root.ID, "child"} {
-				opts := persis.DAGRunCreateAttemptOptions{}
-				if runID != root.ID {
-					opts.RootDAGRun = root
-				}
-				attempt, err := server.DAGRunRepository.CreateAttempt(server.Context, dag, time.Now(), runID, opts)
-				require.NoError(t, err)
-				status := ir.InitialStatus(dag)
-				status.DAGRunID = runID
-				status.AttemptID = attempt.ID()
-				status.Root = root
-				status.Log = logPath
-				status.Nodes[0].Stdout = logPath
-				if runID == root.ID {
-					status.Nodes[0].SubRuns = []ir.SubDAGRun{{DAGRunID: "child", DAGName: dag.Name}}
-				}
-				require.NoError(t, attempt.Open(server.Context))
-				require.NoError(t, attempt.Write(server.Context, status))
-				require.NoError(t, attempt.Close(server.Context))
-			}
+			root := seedStepLogRuns(t, server, logPath, "")
 
 			for _, path := range []string{
 				"/log",
@@ -356,7 +335,7 @@ func TestLogPageLimits(t *testing.T) {
 									want = http.StatusOK
 								}
 								resp := server.Client().Get(fmt.Sprintf(
-									"/api/v1/dag-runs/%s/%s%s?remoteNode=local&stream=stdout&%s=%d", dag.Name, root.ID, path, param, count,
+									"/api/v1/dag-runs/%s/%s%s?remoteNode=local&stream=stdout&%s=%d", root.Name, root.ID, path, param, count,
 								)).ExpectStatus(want).Send(t)
 								if want == http.StatusOK {
 									var body api.GetDAGRunLog200JSONResponse
@@ -372,6 +351,83 @@ func TestLogPageLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+// An omitted stream reads stdout, as the step-log download endpoints do. A
+// value outside the enum also reads stdout unless strict validation rejects it.
+func TestStepLogStream(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		t.Run(fmt.Sprintf("strict=%t", strict), func(t *testing.T) {
+			server := test.SetupServer(t, test.WithConfigMutator(func(cfg *config.Config) {
+				cfg.Server.StrictValidation = strict
+			}))
+			dir := t.TempDir()
+			stdout := filepath.Join(dir, "stdout.log")
+			stderr := filepath.Join(dir, "stderr.log")
+			require.NoError(t, os.WriteFile(stdout, []byte("out\n"), 0o600))
+			require.NoError(t, os.WriteFile(stderr, []byte("err\n"), 0o600))
+			root := seedStepLogRuns(t, server, stdout, stderr)
+			invalidStatus := http.StatusOK
+			if strict {
+				invalidStatus = http.StatusBadRequest
+			}
+
+			for _, path := range []string{"/steps/main/log", "/sub-dag-runs/child/steps/main/log"} {
+				for _, tc := range []struct {
+					query   string
+					status  int
+					content string
+				}{
+					{query: "", status: http.StatusOK, content: "out"},
+					{query: "?stream=stdout", status: http.StatusOK, content: "out"},
+					{query: "?stream=stderr", status: http.StatusOK, content: "err"},
+					{query: "?stream=false", status: invalidStatus, content: "out"},
+				} {
+					t.Run(path+tc.query, func(t *testing.T) {
+						resp := server.Client().Get(fmt.Sprintf(
+							"/api/v1/dag-runs/%s/%s%s%s", root.Name, root.ID, path, tc.query,
+						)).ExpectStatus(tc.status).Send(t)
+						if tc.status == http.StatusOK {
+							var body api.GetDAGRunStepLog200JSONResponse
+							resp.Unmarshal(t, &body)
+							require.Equal(t, tc.content, body.Content)
+						}
+					})
+				}
+			}
+		})
+	}
+}
+
+// seedStepLogRuns saves a root run and its sub-run "child", each with a step
+// "main" that writes to the given log files. The stdout file also serves as
+// the run log.
+func seedStepLogRuns(t *testing.T, server test.Server, stdout, stderr string) ir.DAGRunRef {
+	t.Helper()
+	dag := &ir.DAG{Name: "step-logs", Steps: []ir.Step{{Name: "main"}}}
+	root := ir.NewDAGRunRef(dag.Name, "root")
+	for _, runID := range []string{root.ID, "child"} {
+		opts := persis.DAGRunCreateAttemptOptions{}
+		if runID != root.ID {
+			opts.RootDAGRun = root
+		}
+		attempt, err := server.DAGRunRepository.CreateAttempt(server.Context, dag, time.Now(), runID, opts)
+		require.NoError(t, err)
+		status := ir.InitialStatus(dag)
+		status.DAGRunID = runID
+		status.AttemptID = attempt.ID()
+		status.Root = root
+		status.Log = stdout
+		status.Nodes[0].Stdout = stdout
+		status.Nodes[0].Stderr = stderr
+		if runID == root.ID {
+			status.Nodes[0].SubRuns = []ir.SubDAGRun{{DAGRunID: "child", DAGName: dag.Name}}
+		}
+		require.NoError(t, attempt.Open(server.Context))
+		require.NoError(t, attempt.Write(server.Context, status))
+		require.NoError(t, attempt.Close(server.Context))
+	}
+	return root
 }
 
 func readLogArchive(t *testing.T, body string) map[string]string {

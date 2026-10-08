@@ -1125,7 +1125,7 @@ func (a *API) GetDAGRunStepLog(ctx context.Context, request api.GetDAGRunStepLog
 	if err != nil {
 		return nil, err
 	}
-	logFile := selectLogFile(node, *request.Params.Stream)
+	logFile := selectLogFile(node, request.Params.Stream)
 
 	content, lineCount, totalLines, hasMore, isEstimate, err := fileutil.ReadLogContent(logFile, options)
 	if err != nil {
@@ -2666,7 +2666,7 @@ func (a *API) GetSubDAGRunStepLog(ctx context.Context, request api.GetSubDAGRunS
 	if err != nil {
 		return nil, err
 	}
-	logFile := selectLogFile(node, *request.Params.Stream)
+	logFile := selectLogFile(node, request.Params.Stream)
 
 	content, lineCount, totalLines, hasMore, isEstimate, err := fileutil.ReadLogContent(logFile, options)
 	if err != nil {
@@ -5178,8 +5178,10 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func selectLogFile(node *ir.Node, stream api.Stream) string {
-	if stream == api.StreamStderr {
+// selectLogFile returns the stderr log only when it is requested explicitly;
+// any other stream, including an omitted one, selects stdout.
+func selectLogFile(node *ir.Node, stream *api.Stream) string {
+	if stream != nil && *stream == api.StreamStderr {
 		return node.Stderr
 	}
 	return node.Stdout
