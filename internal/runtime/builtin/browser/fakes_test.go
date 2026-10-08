@@ -68,6 +68,9 @@ type fakeEngine struct {
 	hidden []string
 	// twoStepAct makes acts perform two actions, as a two-step act does.
 	twoStepAct bool
+	// actFills, if set, is what acts type into the element they choose, as
+	// an act that types a value itself does.
+	actFills string
 	// actLosesPage is how many of the next acts lose the connection to the
 	// page after their click lands.
 	actLosesPage int
@@ -88,6 +91,8 @@ type fakeEngine struct {
 	// pageText and visible describe the page that fixed checks read.
 	pageText string
 	visible  []string
+	// snapshot is the page's accessibility tree; its URL is the page's.
+	snapshot pageSnapshot
 	// downloads and downloadErr script what the next download wait reports.
 	downloads   []string
 	downloadErr error
@@ -162,7 +167,7 @@ func (e *fakeEngine) Act(ctx context.Context, instruction string, variables map[
 	e.dialogs = append(e.dialogs, e.actDialogs...)
 	e.actDialogs = nil
 	e.blocked, e.actBlocked = e.actBlocked, nil
-	generate, onAct, twoStep := e.generate, e.onAct, e.twoStepAct
+	generate, onAct, twoStep, fills := e.generate, e.onAct, e.twoStepAct, e.actFills
 	losesPage := e.actLosesPage > 0
 	if losesPage {
 		e.actLosesPage--
@@ -190,6 +195,9 @@ func (e *fakeEngine) Act(ctx context.Context, instruction string, variables map[
 		return actOutcome{}, errFakeSessionLost
 	}
 	actions := []recordedAction{{Selector: "xpath=" + choice.ElementID, Method: "click"}}
+	if fills != "" {
+		actions[0] = recordedAction{Selector: "xpath=" + choice.ElementID, Method: "fill", Arguments: []string{fills}}
+	}
 	if twoStep {
 		actions = append(actions, recordedAction{Selector: "xpath=" + choice.ElementID + "/next", Method: "click"})
 	}
@@ -262,6 +270,15 @@ func (e *fakeEngine) SelectorVisible(_ context.Context, selector string) (bool, 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return slices.Contains(e.visible, selector), nil
+}
+
+// Snapshot returns the scripted accessibility tree of the page.
+func (e *fakeEngine) Snapshot(context.Context) (pageSnapshot, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	snapshot := e.snapshot
+	snapshot.URL = e.url
+	return snapshot, nil
 }
 
 // WaitForDownloads reports the scripted downloads once, as if they finished

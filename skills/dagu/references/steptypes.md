@@ -1238,6 +1238,7 @@ steps:
 
 Browser behavior:
 
+- Before writing a browser step for a page you have not seen, work the page in a browser session (`dagu browser session`, see `references/cli.md`) with the same operations, looking at its outline after each, instead of guessing at its fields, buttons, or addresses. Export what worked: the step comes out with its acts recorded, so its first run replays them. With `browser.profile`, sign-in operations run only while the site asks for them, so guard them with `when: {selector: ...}` on the sign-in form.
 - Each `do` item sets exactly one of `goto`, `act`, `extract`, `expect`, `wait` (`selector` or `duration`), `screenshot`, or `ask`, plus optional `when` (skip unless it holds) and `timeout`.
 - An `act` performs one action: "Sign in with %user% and %password%" types into one field and stops. Write one act per field and one for the button. A dropdown that is not a native `<select>` takes two acts: one opens it, the next picks the option.
 - `expect` and `when` take a statement the model judges, or a fixed check `{text}`, `{selector}`, or `{url}` that reads the page without a model call. Prefer fixed checks for monitoring; they give the same result on every run. A fixed `when` reads the page once; add `within: 10s` when the page may still be loading.

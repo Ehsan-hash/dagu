@@ -619,6 +619,10 @@ func TestAskWaitsAndResumesSameBrowser(t *testing.T) {
 	t.Parallel()
 
 	run := newTestRun(t, pageModel(map[string]string{"The account name": `{"account":"acme"}`}))
+	// The resumed step closes the browser's whole process tree, which only
+	// the browser's process identifies.
+	run.engine.handle.BrowserPID = 4242
+	run.engine.handle.BrowserStartedAt = 1_700_000_000_000
 	waiting := run.execute(loginSteps, nil)
 	require.NoError(t, waiting.err)
 
@@ -1075,4 +1079,42 @@ func TestFixedWhenWaitsWithin(t *testing.T) {
 	]}`, nil)
 	require.NoError(t, execution.err)
 	assert.Equal(t, []string{"Open the code form"}, run.engine.actInstructions())
+}
+
+// A step fails at once when a browser session keeps its profile's browser
+// open, naming the session and how to close it, rather than starting a
+// second browser on the same profile.
+func TestProfileHeldByBrowserSessionFailsStep(t *testing.T) {
+	t.Parallel()
+
+	run := newTestRun(t, pageModel(nil))
+	sessions := browserhost.NewInteractiveStore(filepath.Join(run.dataDir, browserhost.DataDirName))
+	require.NoError(t, sessions.Save(browserhost.Record{
+		ID: "ab2cd3ef4g", State: browserhost.StateInteractive, Profile: "shop", Deadline: time.Now().Add(time.Hour),
+	}))
+
+	execution := run.execute(`{"browser":{"profile":"shop"},"do":[{"goto":"https://shop.example.com"}]}`, nil)
+	require.Error(t, execution.err)
+	assert.Contains(t, execution.err.Error(), `browser profile "shop" is held by browser session ab2cd3ef4g; close it with "dagu browser session close ab2cd3ef4g"`)
+	assert.Empty(t, run.launcher.launches)
+}
+
+// Taking a profile without waiting fails at once while a running step uses
+// it, and succeeds once the step is done with it.
+func TestProfileWithoutWaiting(t *testing.T) {
+	t.Parallel()
+
+	browserDir := t.TempDir()
+	step, err := acquireProfile(t.Context(), browserDir, "shop", "step-record", true)
+	require.NoError(t, err)
+
+	_, err = acquireProfile(t.Context(), browserDir, "shop", "ab2cd3ef4g", false)
+	var held *profileHeldError
+	require.ErrorAs(t, err, &held)
+	assert.Equal(t, `browser profile "shop" is in use by a running browser step`, err.Error())
+
+	step.release()
+	session, err := acquireProfile(t.Context(), browserDir, "shop", "ab2cd3ef4g", false)
+	require.NoError(t, err)
+	session.release()
 }

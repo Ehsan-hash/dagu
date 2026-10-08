@@ -166,6 +166,10 @@ func (stagehandLauncher) Reattach(ctx context.Context, handle browserHandle, opt
 	}
 	eng.handle.ExtensionID = handle.ExtensionID
 	eng.handle.ExtensionDir = handle.ExtensionDir
+	// Closing waits for the browser's process tree, which only the recorded
+	// process identifies.
+	eng.handle.BrowserPID = handle.BrowserPID
+	eng.handle.BrowserStartedAt = handle.BrowserStartedAt
 	if err := eng.handleDownloads(ctx, opts.DownloadsDir); err != nil {
 		return nil, errors.Join(err, eng.Close(context.WithoutCancel(ctx)))
 	}
@@ -209,9 +213,13 @@ func startEngine(ctx context.Context, browser *stagehand.Browser, cdpURL string,
 		return nil, err
 	}
 	off := false
+	// Model calls end with the engine: the runtime closes only after the
+	// call it waits on answers, so one left running would keep a kept
+	// browser's runtime busy after the engine is gone.
+	calls, endCalls := context.WithCancel(context.Background())
 	client, err := stagehand.Create(ctx, stagehand.CreateOptions{
 		Browser:  browser,
-		Generate: stagehandGenerate(opts.Generate),
+		Generate: stagehandGenerate(endingWith(calls, opts.Generate)),
 		Cache:    new(stagehand.CacheEnabled(false)),
 		SelfHeal: &off,
 		// The SDK writes every enabled log line to the process stderr,
@@ -221,12 +229,14 @@ func startEngine(ctx context.Context, browser *stagehand.Browser, cdpURL string,
 		Telemetry: stagehand.TelemetryConfig{Traces: stagehand.TelemetryTraces{Endpoint: sink.url}},
 	})
 	if err != nil {
+		endCalls()
 		sink.close()
 		return nil, fmt.Errorf("start browser runtime: %w", err)
 	}
 	eng := &stagehandEngine{
 		browser:         browser,
 		client:          client,
+		endCalls:        endCalls,
 		sink:            sink,
 		handle:          browserHandle{CDPURL: cdpURL},
 		pageCallTimeout: pageCallTimeout,
@@ -257,8 +267,10 @@ func startEngine(ctx context.Context, browser *stagehand.Browser, cdpURL string,
 type stagehandEngine struct {
 	browser *stagehand.Browser
 	client  *stagehand.Stagehand
-	sink    *telemetrySink
-	handle  browserHandle
+	// endCalls ends the model calls the runtime is waiting on.
+	endCalls context.CancelFunc
+	sink     *telemetrySink
+	handle   browserHandle
 	// downloads saves downloads into the step's artifacts; nil when
 	// downloads are refused.
 	downloads *browserhost.DownloadWatcher
@@ -499,6 +511,29 @@ func (e *stagehandEngine) SelectorVisible(ctx context.Context, selector string) 
 	return visible, nil
 }
 
+func (e *stagehandEngine) Snapshot(ctx context.Context) (pageSnapshot, error) {
+	return boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (pageSnapshot, error) {
+		page, err := e.page(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		// Without options the tree covers iframes, as an act's does.
+		snapshot, err := page.Snapshot(ctx, nil)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		pageURL, err := page.URL(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		title, err := page.Title(ctx)
+		if err != nil {
+			return pageSnapshot{}, err
+		}
+		return pageSnapshot{Tree: snapshot.FormattedTree, URLs: snapshot.URLMap, XPaths: snapshot.XPathMap, URL: pageURL, Title: title}, nil
+	})
+}
+
 // evaluate runs a JavaScript expression in the active page.
 func (e *stagehandEngine) evaluate(ctx context.Context, expression string) (json.RawMessage, error) {
 	return boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (json.RawMessage, error) {
@@ -611,6 +646,8 @@ func (e *stagehandEngine) release(ctx context.Context) error {
 		errs = append(errs, e.blocked.Close())
 		e.blocked = nil
 	}
+	// The runtime closes once the model call it may be waiting on answers.
+	e.endCalls()
 	// The runtime ends its session over the page connection, which an
 	// unresponsive page blocks; the client is released either way.
 	_, err := boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (struct{}, error) {
@@ -648,6 +685,16 @@ func actOptions(variables map[string]string, timeout time.Duration) *stagehand.S
 }
 
 // stagehandGenerate adapts the runtime's model requests to generate.
+// endingWith makes generate's calls end when calls ends.
+func endingWith(calls context.Context, generate generateFunc) generateFunc {
+	return func(ctx context.Context, req generateRequest) (generateResponse, error) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(calls, cancel)()
+		return generate(ctx, req)
+	}
+}
+
 func stagehandGenerate(generate generateFunc) stagehand.LLMGenerateFunc {
 	return func(ctx context.Context, params stagehand.LLMGenerateParams) (stagehand.LLMGenerateResult, error) {
 		structured, ok := params.AsStructured()

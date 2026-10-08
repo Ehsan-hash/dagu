@@ -615,6 +615,21 @@ func validateHumanTaskStep(step ir.Step) error {
 	return nil
 }
 
+// ValidateStepID reports whether id can identify a step: it starts with a
+// letter, holds only letters, digits, and underscores, is not too long,
+// and is not a reserved word.
+func ValidateStepID(id string) error {
+	switch {
+	case !isValidStepID(id):
+		return fmt.Errorf("invalid step ID format: must match %s (use '_' instead of '-')", stepIDPattern.String())
+	case len(id) > maxStepIDLen:
+		return ir.ErrStepIDTooLong
+	case isReservedWord(id):
+		return fmt.Errorf("step ID '%s' is a reserved word", id)
+	}
+	return nil
+}
+
 func isValidStepID(id string) bool {
 	return stepIDPattern.MatchString(id)
 }

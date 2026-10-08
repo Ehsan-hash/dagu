@@ -4395,3 +4395,28 @@ func TestArtifactPathSchemaPatternMatchesParser(t *testing.T) {
 		})
 	}
 }
+
+// An llm block given on its own reads and is checked as a step's llm field
+// is.
+func TestParseLLMConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseLLMConfig([]byte("provider: openrouter\nmodel: deepseek/deepseek-v4-flash\napi_key_name: OPENROUTER_API_KEY\n"))
+	require.NoError(t, err)
+	assert.Equal(t, &ir.LLMConfig{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash", APIKeyName: "OPENROUTER_API_KEY"}, cfg)
+
+	cfg, err = ParseLLMConfig([]byte(`{"model": [{"provider": "openai", "name": "gpt-5-mini"}, {"provider": "local", "name": "qwen3", "base_url": "http://127.0.0.1:11434/v1"}]}`))
+	require.NoError(t, err)
+	require.Len(t, cfg.Models, 2)
+	assert.Equal(t, "http://127.0.0.1:11434/v1", cfg.Models[1].BaseURL)
+
+	for input, want := range map[string]string{
+		"provider: someai\nmodel: m\n":               "llm.provider",
+		"provider: openai\n":                         "model must be specified",
+		"provider: openai\nmodel_name: gpt-5-mini\n": "model_name",
+		"provider: openai\nmodel: m\ntemperature: 3": "temperature must be between 0.0 and 2.0",
+	} {
+		_, err := ParseLLMConfig([]byte(input))
+		assert.ErrorContains(t, err, want, input)
+	}
+}

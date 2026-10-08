@@ -448,6 +448,8 @@ func TestStagehandReattachAfterProcessExit(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
+	assert.Equal(t, handle.BrowserPID, eng.Handle().BrowserPID, "the reattached browser keeps its process")
+	assert.Equal(t, handle.BrowserStartedAt, eng.Handle().BrowserStartedAt)
 	pageURL, err := eng.CurrentURL(t.Context())
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(pageURL, "data:text/html"), pageURL)
@@ -745,4 +747,90 @@ func TestStagehandFailedLaunchEndsBrowser(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return errors.Is(browserhost.Probe(context.Background(), "http://127.0.0.1:"+string(port[1])), browserhost.ErrUnreachable)
 	}, 10*time.Second, 200*time.Millisecond, "the failed launch ends the browser")
+}
+
+// A real page's snapshot renders as the outline the renderer is built for,
+// so a change in the tree the browser runtime reports shows up here.
+func TestStagehandSnapshotOutlinesThePage(t *testing.T) {
+	t.Parallel()
+	requireChrome(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<html><head><title>Sign in</title></head><body>
+<h1>Portal</h1>
+<form><label>Login ID <input name="id" value="typed-id"></label>
+<label>Status <select><option>All</option><option selected>Open</option></select></label>
+<button type="submit">Sign in</button></form>
+<a href="/help">Help</a></body></html>`)
+	}))
+	t.Cleanup(server.Close)
+	eng := launchBrowser(t, launchOptions{Generate: (&shopModel{}).generate})
+	require.NoError(t, eng.Goto(t.Context(), server.URL+"/login", time.Minute))
+
+	snap, err := eng.Snapshot(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "Sign in", snap.Title)
+	assert.Equal(t, server.URL+"/login", snap.URL)
+	text, _, _ := renderOutline(snap, outlineOptions{})
+	assert.Equal(t, `heading: Portal
+form
+  [] textbox "Login ID"
+  [] select "Status" = Open; options: All, Open
+  [] button "Sign in"
+[] link "Help" -> /help`, regexp.MustCompile(`\[[^\]]+\]`).ReplaceAllString(text, "[]"))
+
+	// The ID before an element finds it again: an element operation acts on
+	// it by its XPath, as a replayed action does.
+	selected, help, err := elementAct(snap, elementOperation{kind: opSelect, element: elementRef(t, text, `select "Status"`), text: "All"})
+	require.NoError(t, err)
+	assert.Equal(t, `Select "All" in the "Status" dropdown`, selected)
+	done, err := eng.Replay(t.Context(), help, nil, time.Minute)
+	require.NoError(t, err)
+	assert.True(t, done, "the select takes the option")
+	_, click, err := elementAct(snap, elementOperation{kind: opClick, element: elementRef(t, text, `link "Help"`)})
+	require.NoError(t, err)
+	done, err = eng.Replay(t.Context(), click, nil, time.Minute)
+	require.NoError(t, err)
+	assert.True(t, done)
+	assert.Eventually(t, func() bool {
+		current, err := eng.CurrentURL(t.Context())
+		return err == nil && current == server.URL+"/help"
+	}, 10*time.Second, 100*time.Millisecond, "clicking the link by its ID follows it")
+}
+
+// elementRef is the ID the outline shows before the line holding what.
+func elementRef(t *testing.T, outline, what string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(outline, "\n") {
+		if strings.Contains(line, what) {
+			id, _, _ := strings.Cut(strings.TrimSpace(line), "] ")
+			return strings.TrimPrefix(id, "[")
+		}
+	}
+	t.Fatalf("no line holds %s in:\n%s", what, outline)
+	return ""
+}
+
+// A model call still running when the engine detaches ends with it, so the
+// kept browser's runtime closes and the next engine reattaches at once.
+func TestStagehandDetachEndsAModelCallItWaitsOn(t *testing.T) {
+	t.Parallel()
+	hanging := func(ctx context.Context, _ generateRequest) (generateResponse, error) {
+		<-ctx.Done()
+		return generateResponse{}, ctx.Err()
+	}
+	eng := launchBrowser(t, launchOptions{Generate: hanging})
+	require.NoError(t, eng.Goto(t.Context(), "data:text/html,"+strings.ReplaceAll(shopPage, "#", "%23"), time.Minute))
+	_, err := eng.Act(t.Context(), "Click Add to cart", nil, 2*time.Second)
+	require.Error(t, err, "the act waits on a model that never answers")
+	require.NoError(t, eng.Detach(t.Context()), "the runtime closes once its model call ends")
+
+	var reattached engine
+	err = withStartupSlot(func() (err error) {
+		reattached, err = stagehandLauncher{}.Reattach(t.Context(), eng.Handle(), launchOptions{Generate: (&shopModel{}).generate})
+		return err
+	})
+	require.NoError(t, err)
+	require.NoError(t, reattached.Goto(t.Context(), "data:text/html,"+strings.ReplaceAll(shopPage, "#", "%23"), time.Minute))
 }
