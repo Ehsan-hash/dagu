@@ -530,7 +530,7 @@ func (e *stagehandEngine) Snapshot(ctx context.Context) (pageSnapshot, error) {
 		if err != nil {
 			return pageSnapshot{}, err
 		}
-		return pageSnapshot{Tree: snapshot.FormattedTree, URLs: snapshot.URLMap, URL: pageURL, Title: title}, nil
+		return pageSnapshot{Tree: snapshot.FormattedTree, URLs: snapshot.URLMap, XPaths: snapshot.XPathMap, URL: pageURL, Title: title}, nil
 	})
 }
 

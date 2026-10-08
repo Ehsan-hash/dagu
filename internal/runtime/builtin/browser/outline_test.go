@@ -39,57 +39,57 @@ func TestOutlineDescribesWhatAPersonSees(t *testing.T) {
 	for _, tc := range []struct{ fixture, want string }{
 		{"login", `heading: 取引先ポータル
 form
-  textbox "ログインID"
-  textbox "パスワード"
-  checkbox "Remember me" [checked]
-  button "ログイン"
+  [0-4] textbox "ログインID"
+  [0-5] textbox "パスワード"
+  [0-6] checkbox "Remember me" [checked]
+  [0-7] button "ログイン"
 alert: IDまたはパスワードが違います。
 banner
   navigation
-    link "Home" -> https://portal.example.com/
-    link "Help" -> https://portal.example.com/help`},
+    [0-15] link "Home" -> https://portal.example.com/
+    [0-17] link "Help" -> https://portal.example.com/help`},
 		{"orders", `heading: 注文一覧
-select "状態" = 未出荷; options: すべて, 未出荷, 出荷済み
-button "検索"
+[0-106] select "状態" = 未出荷; options: すべて, 未出荷, 出荷済み
+[0-131] button "検索"
 table: 12 rows; columns: 注文番号 | 取引先 | 金額 | 状態
   row: PO-01 | Acme | 12,000円 | 未出荷
-    link "PO-01" -> https://portal.example.com/orders/PO-01
+    [0-142] link "PO-01" -> https://portal.example.com/orders/PO-01
   row: PO-02 | Acme | 12,000円 | 未出荷
-    link "PO-02" -> https://portal.example.com/orders/PO-02
+    [0-148] link "PO-02" -> https://portal.example.com/orders/PO-02
   row: PO-03 | Acme | 12,000円 | 未出荷
-    link "PO-03" -> https://portal.example.com/orders/PO-03
+    [0-154] link "PO-03" -> https://portal.example.com/orders/PO-03
   … 9 more rows like these
-button "前へ"
+[0-213] button "前へ"
 text: 12件中 1 / 3 ページ
-button "次へ"
+[0-215] button "次へ"
 navigation
-  link "注文一覧" -> https://portal.example.com/orders
-  link "請求書" -> https://portal.example.com/invoices`},
+  [0-112] link "注文一覧" -> https://portal.example.com/orders
+  [0-113] link "請求書" -> https://portal.example.com/invoices`},
 		{"list", `heading: Items
 list
   item: Item B ¥100
-    link "Item B" -> https://portal.example.com/item/b
+    [0-364] link "Item B" -> https://portal.example.com/item/b
   item: Item C ¥200
-    link "Item C" -> https://portal.example.com/item/c
+    [0-367] link "Item C" -> https://portal.example.com/item/c
   item: Item D ¥300
-    link "Item D" -> https://portal.example.com/item/d
+    [0-370] link "Item D" -> https://portal.example.com/item/d
   … 27 more items like these
-radio "Newest" [checked]
-radio "Price"
-textbox "Note"`},
+[0-354] radio "Newest" [checked]
+[0-355] radio "Price"
+[0-229] textbox "Note"`},
 		{"frame", `heading: Outer
 iframe "login frame"
   heading: 取引先ポータル
   form
-    textbox "ログインID"
-    textbox "パスワード"
-    checkbox "Remember me" [checked]
-    button "ログイン"
+    [1-469] textbox "ログインID"
+    [1-470] textbox "パスワード"
+    [1-471] checkbox "Remember me" [checked]
+    [1-472] button "ログイン"
   alert: IDまたはパスワードが違います。
   banner
     navigation
-      link "Home" -> https://portal.example.com/
-      link "Help" -> https://portal.example.com/help`},
+      [1-481] link "Home" -> https://portal.example.com/
+      [1-483] link "Help" -> https://portal.example.com/help`},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			t.Parallel()
@@ -110,7 +110,7 @@ func TestOutlineFind(t *testing.T) {
 	assert.Equal(t, 1, matches)
 	assert.Equal(t, `table: 12 rows; columns: 注文番号 | 取引先 | 金額 | 状態
   row: PO-07 | Acme | 12,000円 | 未出荷
-    link "PO-07" -> https://portal.example.com/orders/PO-07`, text)
+    [0-178] link "PO-07" -> https://portal.example.com/orders/PO-07`, text)
 
 	text, _, matches = renderOutline(snap, outlineOptions{Find: "orders/PO-1"})
 	assert.Equal(t, 3, matches, "the address of a link is searched too")
@@ -146,8 +146,8 @@ func TestOutlineLeavesOutTypedText(t *testing.T) {
   [0-6] paragraph
     [0-7] StaticText: Welcome back`
 	text, _, _ := renderOutline(pageSnapshot{Tree: tree}, outlineOptions{})
-	assert.Equal(t, `textbox "Password"
-combobox "Search"
+	assert.Equal(t, `[0-2] textbox "Password"
+[0-4] combobox "Search"
 text: Welcome back`, text)
 }
 
@@ -170,9 +170,9 @@ func TestOutlineChoicesAndScriptLinks(t *testing.T) {
 		"0-3": "javascript:void(0)",
 		"0-4": "https://example.com/a",
 	}}, outlineOptions{})
-	assert.Equal(t, `select "Country" = Country 4; options: Country 0, Country 1, Country 2, Country 3, Country 4, Country 5, Country 6, Country 7, Country 8, Country 9, Country 10, Country 11, Country 12, Country 13, Country 14 (+5 more)
-link "Open menu"
-link "Name: with colon" -> https://example.com/a`, text)
+	assert.Equal(t, `[0-2] select "Country" = Country 4; options: Country 0, Country 1, Country 2, Country 3, Country 4, Country 5, Country 6, Country 7, Country 8, Country 9, Country 10, Country 11, Country 12, Country 13, Country 14 (+5 more)
+[0-3] link "Open menu"
+[0-4] link "Name: with colon" -> https://example.com/a`, text)
 }
 
 // A tree whose lines end in CRLF, as a fixture checked out on Windows has,
@@ -212,4 +212,29 @@ func TestOutlineCountsAlikeFields(t *testing.T) {
 	}
 	text, _, _ := renderOutline(pageSnapshot{Tree: tree.String()}, outlineOptions{})
 	assert.Contains(t, text, "… 4 more checkboxes like these")
+}
+
+// Each element a person can act on shows its ID, which an operation names
+// it by. A link to the page's own site shows its path, and a list item that
+// is one link shows only the link.
+func TestOutlineNumbersElementsAndShortensLinks(t *testing.T) {
+	t.Parallel()
+
+	tree := `[0-1] RootWebArea: Results
+  [0-2] list
+    [0-3] listitem
+      [0-4] link: Brillia 上野 1億9580万円
+        [0-5] StaticText: Brillia 上野 1億9580万円
+    [0-6] listitem
+      [0-7] link: Elsewhere
+        [0-8] StaticText: Elsewhere
+  [0-9] button: 検索`
+	text, _, _ := renderOutline(pageSnapshot{Tree: tree, URL: "https://suumo.jp/ms/chuko/", URLs: map[string]string{
+		"0-4": "https://suumo.jp/ms/chuko/tokyo/nc_1/?x=1",
+		"0-7": "https://example.com/other",
+	}}, outlineOptions{})
+	assert.Equal(t, `list
+  [0-4] link "Brillia 上野 1億9580万円" -> /ms/chuko/tokyo/nc_1/?x=1
+  [0-7] link "Elsewhere" -> https://example.com/other
+[0-9] button "検索"`, text)
 }

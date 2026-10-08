@@ -345,6 +345,16 @@ A variable given as {"env": NAME} is read from the environment on this and
 every later command and masked like a secret; a plain string serves this
 command only.
 
+An element the outline shows with its ID can be acted on by that ID,
+without the model:
+
+  {"click": "0-131"}
+  {"type": {"into": "0-229", "text": "%user%"}}
+  {"select": {"in": "0-106", "option": "未出荷"}}
+
+The session keeps each as the act a step writes, reported as act, with the
+action it took as the act's recording.
+
 The result reports what the operation did, the actions an act performed,
 what an extract read, and the page the browser is on next. An operation that
 fails is reported with status failed and the command exits 1; the session
@@ -352,6 +362,7 @@ stays open.
 
 Examples:
   echo '{"act": "Click Sign in"}' | dagu browser session do ab2cd3ef4g
+  echo '{"click": "0-131"}' | dagu browser session do ab2cd3ef4g
   dagu browser session do ab2cd3ef4g < operation.yaml
 `,
 		Args: cobra.ExactArgs(1),

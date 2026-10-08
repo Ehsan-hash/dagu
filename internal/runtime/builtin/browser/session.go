@@ -186,6 +186,8 @@ type DoResult struct {
 	// Error is why the operation failed.
 	Error   *SessionError   `json:"error,omitempty"`
 	Actions []SessionAction `json:"actions"`
+	// Act is the act a step writes for an element operation.
+	Act string `json:"act,omitempty"`
 	// Recorded reports that a step exported from the session replays the
 	// act's actions.
 	Recorded bool           `json:"recorded"`
@@ -499,21 +501,51 @@ func (s *Sessions) operator(eng engine, bridge *modelBridge, state sessionState,
 	}
 }
 
-// sessionRecorder lets acts record the page they start on without ever
-// replaying: a session works the page as it is.
-type sessionRecorder struct{}
+// sessionRecorder lets acts record the page they start on without
+// replaying, since a session works the page as it is, except the action an
+// element operation chose, which its act replays.
+type sessionRecorder struct {
+	preset []recordedAction
+}
 
-func (sessionRecorder) lookup(string) ([]recordedAction, bool) { return nil, false }
-func (sessionRecorder) stage(string, []recordedAction)         {}
-func (sessionRecorder) drop(string)                            {}
+func (r sessionRecorder) lookup(string) ([]recordedAction, bool) { return r.preset, len(r.preset) > 0 }
+func (sessionRecorder) stage(string, []recordedAction)           {}
+func (sessionRecorder) drop(string)                              {}
+
+// checkOperation refuses an operation the session cannot run as given: an
+// act using a variable no value was given for, one needing a model the
+// session lacks, or one whose words hold a secret's value. An element
+// operation's act replays the action chosen for it, so it needs no model.
+func checkOperation(op operation, state sessionState, values sessionValues, element bool) error {
+	if op.Act != nil {
+		for _, name := range agentstep.VariableReferences(op.Act.Instruction) {
+			if _, ok := values.all[name]; !ok {
+				return &SessionError{Code: CodeInvalidInput, Message: fmt.Sprintf("the instruction uses %%%s%%, which no variable sets; give it under variables", name)}
+			}
+		}
+	}
+	if op.needsModel() && state.LLM == nil && !element {
+		return &SessionError{Code: CodeModelRequired, Message: errNoModel.Error()}
+	}
+	if err := agentstep.CheckSecrets(executorType, []agentstep.OperationTexts{{Kind: op.kind(), Texts: op.promptTexts()}}, values.secrets); err != nil {
+		return &SessionError{Code: CodeInvalidInput, Message: err.Error()}
+	}
+	return nil
+}
 
 // Do runs one operation in a session. An operation that fails leaves the
 // session open: the result reports the failure and the error is a
 // SessionError with CodeOperationFailed.
 func (s *Sessions) Do(ctx context.Context, req DoRequest) (DoResult, error) {
-	op, err := parseSessionOperation(req.Operation)
+	element, isElement, err := parseElementOperation(req.Operation)
 	if err != nil {
 		return DoResult{}, err
+	}
+	var op operation
+	if !isElement {
+		if op, err = parseSessionOperation(req.Operation); err != nil {
+			return DoResult{}, err
+		}
 	}
 	if req.OutlineChars < 0 {
 		return DoResult{}, &SessionError{Code: CodeInvalidInput, Message: "the outline size must not be negative"}
@@ -531,18 +563,10 @@ func (s *Sessions) Do(ctx context.Context, req DoRequest) (DoResult, error) {
 	if err != nil {
 		return DoResult{}, err
 	}
-	if op.Act != nil {
-		for _, name := range agentstep.VariableReferences(op.Act.Instruction) {
-			if _, ok := values.all[name]; !ok {
-				return DoResult{}, &SessionError{Code: CodeInvalidInput, Message: fmt.Sprintf("the instruction uses %%%s%%, which no variable sets; give it under variables", name)}
-			}
+	if !isElement {
+		if err := checkOperation(op, state, values, false); err != nil {
+			return DoResult{}, err
 		}
-	}
-	if op.needsModel() && state.LLM == nil {
-		return DoResult{}, &SessionError{Code: CodeModelRequired, Message: errNoModel.Error()}
-	}
-	if err := agentstep.CheckSecrets(executorType, []agentstep.OperationTexts{{Kind: op.kind(), Texts: op.promptTexts()}}, values.secrets); err != nil {
-		return DoResult{}, &SessionError{Code: CodeInvalidInput, Message: err.Error()}
 	}
 	masker := agentstep.NewMasker(values.secrets, nil)
 	bridge, generate, err := s.modelBridge(ctx, state.LLM, masker)
@@ -553,16 +577,37 @@ func (s *Sessions) Do(ctx context.Context, req DoRequest) (DoResult, error) {
 	if err != nil {
 		return DoResult{}, err
 	}
+	// An element operation is the act it stands for, with its action as the
+	// act's recording.
+	var preset []recordedAction
+	if isElement {
+		snap, err := eng.Snapshot(ctx)
+		if err != nil {
+			return DoResult{}, &SessionError{Code: CodeOperationFailed, Message: "read the page: " + masker.MaskString(err.Error())}
+		}
+		instruction, action, err := elementAct(snap, element)
+		if err != nil {
+			return DoResult{}, &SessionError{Code: CodeInvalidInput, Message: masker.MaskString(err.Error())}
+		}
+		op, preset = operation{Act: &actSpec{Instruction: instruction}}, []recordedAction{action}
+		if err := checkOperation(op, state, values, true); err != nil {
+			return DoResult{}, err
+		}
+	}
 
 	began := time.Now()
 	index := len(state.Ops)
 	var warnings []string
 	operator := s.operator(eng, bridge, state, values.all, use.record.WorkDir, &warnings)
+	operator.recorder = sessionRecorder{preset: preset}
 	urlBefore, _ := eng.CurrentURL(ctx)
 	if state.Page.URL != "" && urlBefore != state.Page.URL {
 		warnings = append(warnings, fmt.Sprintf("the page changed since the last command, from %s to %s", state.Page.URL, urlBefore))
 	}
 	result := DoResult{ID: req.ID, Index: index, Kind: op.kind(), Status: OperationDone}
+	if isElement {
+		result.Act = op.Act.Instruction
+	}
 	canonical, err := json.Marshal(op)
 	if err != nil {
 		return DoResult{}, err

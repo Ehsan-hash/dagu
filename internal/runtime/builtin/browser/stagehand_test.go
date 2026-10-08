@@ -775,10 +775,41 @@ func TestStagehandSnapshotOutlinesThePage(t *testing.T) {
 	text, _, _ := renderOutline(snap, outlineOptions{})
 	assert.Equal(t, `heading: Portal
 form
-  textbox "Login ID"
-  select "Status" = Open; options: All, Open
-  button "Sign in"
-link "Help" -> `+server.URL+`/help`, text)
+  [] textbox "Login ID"
+  [] select "Status" = Open; options: All, Open
+  [] button "Sign in"
+[] link "Help" -> /help`, regexp.MustCompile(`\[[^\]]+\]`).ReplaceAllString(text, "[]"))
+
+	// The ID before an element finds it again: an element operation acts on
+	// it by its XPath, as a replayed action does.
+	selected, help, err := elementAct(snap, elementOperation{kind: opSelect, element: elementRef(t, text, `select "Status"`), text: "All"})
+	require.NoError(t, err)
+	assert.Equal(t, `Select "All" in the "Status" dropdown`, selected)
+	done, err := eng.Replay(t.Context(), help, nil, time.Minute)
+	require.NoError(t, err)
+	assert.True(t, done, "the select takes the option")
+	_, click, err := elementAct(snap, elementOperation{kind: opClick, element: elementRef(t, text, `link "Help"`)})
+	require.NoError(t, err)
+	done, err = eng.Replay(t.Context(), click, nil, time.Minute)
+	require.NoError(t, err)
+	assert.True(t, done)
+	assert.Eventually(t, func() bool {
+		current, err := eng.CurrentURL(t.Context())
+		return err == nil && current == server.URL+"/help"
+	}, 10*time.Second, 100*time.Millisecond, "clicking the link by its ID follows it")
+}
+
+// elementRef is the ID the outline shows before the line holding what.
+func elementRef(t *testing.T, outline, what string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(outline, "\n") {
+		if strings.Contains(line, what) {
+			id, _, _ := strings.Cut(strings.TrimSpace(line), "] ")
+			return strings.TrimPrefix(id, "[")
+		}
+	}
+	t.Fatalf("no line holds %s in:\n%s", what, outline)
+	return ""
 }
 
 // A model call still running when the engine detaches ends with it, so the

@@ -68,6 +68,16 @@ step's `with.do`: `goto`, `act`, `extract`, `expect`, `wait`, or
 behaves as the same operation in a step, except that an `act` never replays
 a recording; it asks the model and records what it did.
 
+`do` also acts on an element the outline shows with its ID, without the
+model: `{"click": ID}`, `{"type": {"into": ID, "text": TEXT}}`, or
+`{"select": {"in": ID, "option": OPTION}}`. The element must still be on
+the page, have a name, and be one the operation fits: a field to type into,
+a select to pick from. The session keeps the operation as the act a step
+writes, such as `Click the "Sign in" button`, which the result reports as
+`act`, with the action it took as the act's recording, so an exported step
+replays exactly that action and heals by the act's words when the page
+changes.
+
 The result reports the operation's index in the session's history, its
 status (`done`, `failed`, or `skipped` when its `when` does not hold), the
 actions an act performed and whether an exported step will replay them,
@@ -100,15 +110,16 @@ those operations with `model_required` and runs the rest.
 The outline describes the page without a model request, from the same
 accessibility tree an act shows the model: headings, fields with their
 labels, selects with their choice and options, buttons, checkboxes, links
-with their absolute addresses, messages, and tables and lists by their
-columns and rows. The page's own content comes first, and the site's
-header, menus, sidebars, and footer after it, so a limit on the outline
-leaves out menus rather than content. A run of more than five alike rows
-shows the first three and counts the rest. Text typed into fields is never
-shown. `describe
---find` shows only the entries containing the text, with the entries they
-sit in; `--tree` reports the raw tree instead; `--screenshot` also saves a
-screenshot.
+with their addresses, messages, and tables and lists by their
+columns and rows. Each element an operation can act on shows its ID in
+brackets, and a link to the page's own site shows its path; a list item that
+is one link shows only the link. The page's own content comes first, and the
+site's header, menus, sidebars, and footer after it, so a limit on the
+outline leaves out menus rather than content. A run of more than five alike
+rows shows the first three and counts the rest. Text typed into fields is
+never shown. `describe --find` shows only the entries containing the text,
+with the entries they sit in; `--tree` reports the raw tree instead;
+`--screenshot` also saves a screenshot.
 
 ### Export
 

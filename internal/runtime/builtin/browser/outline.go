@@ -5,6 +5,7 @@ package browser
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -101,6 +102,7 @@ type outlineEntry struct {
 // with opts.Find, how many entries matched.
 func renderOutline(snap pageSnapshot, opts outlineOptions) (string, bool, int) {
 	b := outlineBuilder{urls: snap.URLs}
+	b.page, _ = url.Parse(snap.URL)
 	var entries []*outlineEntry
 	for _, root := range parseSnapshotTree(snap.Tree) {
 		entries = append(entries, b.build(root)...)
@@ -119,6 +121,9 @@ func renderOutline(snap pageSnapshot, opts outlineOptions) (string, bool, int) {
 
 type outlineBuilder struct {
 	urls map[string]string
+	// page is the address of the page outlined, against which links to the
+	// same site are shown by their path.
+	page *url.URL
 }
 
 // containerRoles group what they hold under their own line, and are left out
@@ -164,9 +169,9 @@ func (b outlineBuilder) build(n *outlineNode) []*outlineEntry {
 		return []*outlineEntry{choiceEntry(n)}
 	case slices.Contains(fieldRoles, n.role), n.role == "combobox":
 		// A field's text is what was typed into it, which may be a secret.
-		return []*outlineEntry{{line: withName(n.role, n.name), shape: n.role}}
+		return []*outlineEntry{{line: withRef(n, withName(n.role, n.name)), shape: n.role}}
 	case slices.Contains(toggleRoles, n.role), slices.Contains(pressableRoles, n.role):
-		return []*outlineEntry{{line: withFlags(withName(n.role, n.name), n.flags), shape: n.role}}
+		return []*outlineEntry{{line: withRef(n, withFlags(withName(n.role, n.name), n.flags)), shape: n.role}}
 	case n.role == "heading":
 		return []*outlineEntry{{line: "heading: " + clip(n.name, outlineTextRunes), shape: "heading"}}
 	case slices.Contains(messageRoles, n.role):
@@ -225,11 +230,21 @@ func (b outlineBuilder) children(n *outlineNode) []*outlineEntry {
 }
 
 func (b outlineBuilder) link(n *outlineNode) *outlineEntry {
-	line := withName("link", n.name)
+	line := withRef(n, withName("link", n.name))
 	if target := b.urls[n.id]; target != "" && !strings.HasPrefix(strings.ToLower(target), "javascript:") {
-		line += " -> " + clip(target, outlineLinkRunes)
+		line += " -> " + clip(b.address(target), outlineLinkRunes)
 	}
 	return &outlineEntry{line: line, shape: "link"}
+}
+
+// address shows a link to the page's own site by its path, which the page's
+// address completes, and any other in full.
+func (b outlineBuilder) address(target string) string {
+	parsed, err := url.Parse(target)
+	if err != nil || b.page == nil || parsed.Scheme != b.page.Scheme || parsed.Host != b.page.Host || parsed.Opaque != "" {
+		return target
+	}
+	return parsed.RequestURI()
 }
 
 // table describes a table by its size and columns, with a line per row.
@@ -267,8 +282,12 @@ func (b outlineBuilder) row(n *outlineNode) []*outlineEntry {
 }
 
 // item describes a list item by its text, with the controls in it under it.
+// An item that is one link, as a list of results often is, is that link.
 func (b outlineBuilder) item(n *outlineNode) *outlineEntry {
 	controls := b.controls(n)
+	if links := descendants(n, "link"); len(controls) == 1 && len(links) == 1 && links[0].name == textOf(n) {
+		return controls[0]
+	}
 	return &outlineEntry{line: "item: " + clip(textOf(n), outlineTextRunes), shape: "item" + shapeOf(controls), children: controls}
 }
 
@@ -296,7 +315,7 @@ func choiceEntry(n *outlineNode) *outlineEntry {
 			names = append(names, option.name)
 		}
 	}
-	line := withName(n.role, n.name)
+	line := withRef(n, withName(n.role, n.name))
 	if len(chosen) > 0 {
 		line += " = " + strings.Join(chosen, ", ")
 	}
@@ -387,6 +406,12 @@ func shapeOf(entries []*outlineEntry) string {
 	return "(" + strings.Join(shapes, ",") + ")"
 }
 
+// withRef puts the node's ID before its line, so an operation can name the
+// node by it.
+func withRef(n *outlineNode, line string) string {
+	return "[" + n.id + "] " + line
+}
+
 func withName(role, name string) string {
 	if name == "" {
 		return role
@@ -441,6 +466,10 @@ func collapsedEntry(entry *outlineEntry) *outlineEntry {
 
 // plural names what a line is, in the plural: "row: …" gives "rows".
 func plural(line string) string {
+	// The element's ID comes before its kind.
+	if strings.HasPrefix(line, "[") {
+		_, line, _ = strings.Cut(line, "] ")
+	}
 	kind, _, _ := strings.Cut(line, " ")
 	kind = strings.TrimSuffix(kind, ":")
 	switch {

@@ -102,9 +102,11 @@ type pageSnapshot struct {
 	Tree string
 	// URLs maps the IDs of link nodes to the absolute addresses they link
 	// to.
-	URLs  map[string]string
-	URL   string
-	Title string
+	URLs map[string]string
+	// XPaths maps the IDs of nodes to the XPaths that find them on the page.
+	XPaths map[string]string
+	URL    string
+	Title  string
 }
 
 // dialog is a JavaScript dialog the browser accepted.
