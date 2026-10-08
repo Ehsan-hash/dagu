@@ -82,6 +82,76 @@ func TestWriteNewWorkbookTableStyle(t *testing.T) {
 	require.Len(t, entries, 1, "no temporary file left behind")
 }
 
+// TestWriteNumberFormats covers the number format style: table gives a
+// column. JSON delivers every number as float64, so a whole one still counts
+// as an integer, and a pinned type sets the format whatever the values are.
+func TestWriteNumberFormats(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		rows    [][]any
+		types   map[string]ColumnType
+		cell    string
+		builtin int    // built-in format id; 0 is General
+		custom  string // custom format code
+		shown   string
+	}{
+		{name: "WholeFloats", rows: [][]any{{float64(17500)}, {float64(-17500)}, {nil}}, cell: "A2", shown: "17500"},
+		{name: "Fraction", rows: [][]any{{20.5}, {float64(10)}}, cell: "A3", custom: "#,##0.00", shown: "10.00"},
+		{name: "NumericMajority", rows: [][]any{{"a"}, {"b"}, {"c"}, {float64(1)}, {float64(2)}, {1.5}, {2.5}}, cell: "A5", custom: "#,##0.00", shown: "1.00"},
+		{name: "PinnedNumber", rows: [][]any{{"17500"}, {float64(200)}}, types: map[string]ColumnType{"v": TypeNumber}, cell: "A2", custom: "#,##0.00", shown: "17,500.00"},
+		{name: "PinnedInteger", rows: [][]any{{17500}}, types: map[string]ColumnType{"v": TypeInteger}, cell: "A2", shown: "17500"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "out.xlsx")
+			_, err := Write(context.Background(), path, Table{Columns: []string{"v"}, Rows: tt.rows}, WriteOptions{Header: true, Types: tt.types})
+			require.NoError(t, err)
+			f, err := excelize.OpenFile(path)
+			require.NoError(t, err)
+			defer func() { _ = f.Close() }()
+			builtin, custom := cellNumFmt(t, f, "Sheet1", tt.cell)
+			assert.Equal(t, tt.builtin, builtin)
+			assert.Equal(t, tt.custom, custom)
+			shown, err := f.GetCellValue("Sheet1", tt.cell)
+			require.NoError(t, err)
+			assert.Equal(t, tt.shown, shown)
+		})
+	}
+}
+
+// TestAppendKeepsFractionDigits covers a fraction appended below a column of
+// whole numbers: it copies the integer format and still shows its digits.
+func TestAppendKeepsFractionDigits(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "log.xlsx")
+	_, err := Write(context.Background(), path, Table{Columns: []string{"v"}, Rows: [][]any{{float64(1)}, {float64(2)}}}, WriteOptions{Header: true})
+	require.NoError(t, err)
+	_, err = Append(context.Background(), path, Table{Columns: []string{"v"}, Rows: [][]any{{20.5}}}, WriteOptions{Header: true})
+	require.NoError(t, err)
+	f, err := excelize.OpenFile(path)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	shown, err := f.GetCellValue("Sheet1", "A4")
+	require.NoError(t, err)
+	assert.Equal(t, "20.5", shown)
+}
+
+// cellNumFmt returns a cell's number format: a built-in id, or zero and a
+// custom format code.
+func cellNumFmt(t *testing.T, f *excelize.File, sheet, cell string) (int, string) {
+	t.Helper()
+	id, err := f.GetCellStyle(sheet, cell)
+	require.NoError(t, err)
+	style, err := f.GetStyle(id)
+	require.NoError(t, err)
+	if style.CustomNumFmt != nil {
+		return 0, *style.CustomNumFmt
+	}
+	return style.NumFmt, ""
+}
+
 func TestWriteStyleNoneAndColumnWidthClamp(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "plain.xlsx")

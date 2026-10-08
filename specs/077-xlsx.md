@@ -320,7 +320,9 @@ kept for the same reason. The sheet itself, its position, the defined names scop
 formulas on other sheets that refer to it stay valid. Other sheets, column
 widths, styles, and defined names are untouched. An AutoFilter on the
 replaced sheet stays in place, as the underlying library offers no way to
-remove one.
+remove one. A replace rebuilds the sheet; to fill a formatted sheet or a
+form and keep its look, use `xlsx.write_cells`, `xlsx.update_rows`, or
+`xlsx.append`, which keep each cell's style.
 
 Values are written by type: numbers as numbers, booleans as booleans,
 `2026-10-01` and `2026-10-01T14:30:00` strings as dates, other strings as
@@ -330,8 +332,12 @@ keeps ISO-looking text as text.
 `style: table` (default) makes a new or replaced sheet look finished: bold
 header on a light fill, frozen below the header, column widths fitted to
 content between 8 and 60 characters with East Asian characters counting
-double, and number formats by column kind: integers plain, decimals with two
+double, and number formats by column kind: integers General, so a fraction
+written later under the same format keeps its digits, decimals with two
 places, dates `yyyy-mm-dd`, date-times `yyyy-mm-dd hh:mm:ss`, text `@`. A
+column's kind is its pinned type, or else the kind most of its values have;
+a whole number is an integer however it arrives, so JSON `17500` shows as
+`17500`, and a column mixing integers and decimals is a decimal column. A
 column mixing dates and date-times is formatted as date-time. `style: none`
 writes bare cells.
 
