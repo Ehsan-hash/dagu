@@ -4935,14 +4935,21 @@ func (a *API) GetDAGRunsListData(ctx context.Context, queryString string) (any, 
 
 		page, err := a.dagRunRepository.ListStatusesPage(readCtx, opts.query)
 		if err != nil {
-			if errors.Is(err, persis.ErrInvalidDAGRunQueryCursor) {
-				return nil, err
+			if apiErr := dagRunListBadRequest(err); apiErr != nil {
+				return nil, apiErr
 			}
 			return nil, fmt.Errorf("error listing dag-runs: %w", err)
 		}
 
 		return toDAGRunsPageResponse(page), nil
 	})
+}
+
+// ValidateDAGRunsListQuery returns a 400 *Error when GetDAGRunsListData would
+// reject the query string's filters.
+func (a *API) ValidateDAGRunsListQuery(ctx context.Context, queryString string) error {
+	_, err := a.dagRunListOptionsFromQueryString(ctx, queryString)
+	return err
 }
 
 func (a *API) dagRunListOptionsFromQueryString(ctx context.Context, queryString string) (dagRunListOptions, error) {
@@ -4952,6 +4959,11 @@ func (a *API) dagRunListOptionsFromQueryString(ctx context.Context, queryString 
 			tag.Error(err),
 			slog.String("queryString", queryString),
 		)
+		return dagRunListOptions{}, &Error{
+			HTTPStatus: http.StatusBadRequest,
+			Code:       api.ErrorCodeBadRequest,
+			Message:    fmt.Sprintf("invalid query parameters: %s", err),
+		}
 	}
 
 	var (
@@ -4980,18 +4992,18 @@ func (a *API) dagRunListOptionsFromQueryString(ctx context.Context, queryString 
 		statusValues = &parsed
 	}
 	if rawFromDate := params.Get("fromDate"); rawFromDate != "" {
-		if ts, convErr := strconv.ParseInt(rawFromDate, 10, 64); convErr == nil {
-			fromDate = &ts
-		} else {
-			logger.Warn(ctx, "Invalid fromDate parameter", slog.String("fromDate", rawFromDate), tag.Error(convErr))
+		ts, convErr := strconv.ParseInt(rawFromDate, 10, 64)
+		if convErr != nil {
+			return dagRunListOptions{}, invalidDAGRunListParam(ctx, "fromDate", rawFromDate, convErr)
 		}
+		fromDate = &ts
 	}
 	if rawToDate := params.Get("toDate"); rawToDate != "" {
-		if ts, convErr := strconv.ParseInt(rawToDate, 10, 64); convErr == nil {
-			toDate = &ts
-		} else {
-			logger.Warn(ctx, "Invalid toDate parameter", slog.String("toDate", rawToDate), tag.Error(convErr))
+		ts, convErr := strconv.ParseInt(rawToDate, 10, 64)
+		if convErr != nil {
+			return dagRunListOptions{}, invalidDAGRunListParam(ctx, "toDate", rawToDate, convErr)
 		}
+		toDate = &ts
 	}
 	if rawName := params.Get("name"); rawName != "" {
 		name = &rawName
@@ -5013,11 +5025,11 @@ func (a *API) dagRunListOptionsFromQueryString(ctx context.Context, queryString 
 		labels = &rawTags
 	}
 	if rawLimit := params.Get("limit"); rawLimit != "" {
-		if parsed, convErr := strconv.Atoi(rawLimit); convErr == nil {
-			limit = &parsed
-		} else {
-			logger.Warn(ctx, "Invalid limit parameter", slog.String("limit", rawLimit), tag.Error(convErr))
+		parsed, convErr := strconv.Atoi(rawLimit)
+		if convErr != nil {
+			return dagRunListOptions{}, invalidDAGRunListParam(ctx, "limit", rawLimit, convErr)
 		}
+		limit = &parsed
 	}
 	if rawCursor := params.Get("cursor"); rawCursor != "" {
 		cursor = &rawCursor
@@ -5054,6 +5066,15 @@ func toCoreStatuses(statuses *api.StatusList) []ir.Status {
 		result = append(result, ir.Status(status))
 	}
 	return result
+}
+
+func invalidDAGRunListParam(ctx context.Context, name, value string, err error) *Error {
+	logger.Warn(ctx, "Invalid "+name+" parameter", slog.String(name, value), tag.Error(err))
+	return &Error{
+		HTTPStatus: http.StatusBadRequest,
+		Code:       api.ErrorCodeBadRequest,
+		Message:    fmt.Sprintf("invalid %s parameter: %q", name, value),
+	}
 }
 
 func parseStatusListQueryValues(ctx context.Context, rawValues []string) (api.StatusList, error) {
