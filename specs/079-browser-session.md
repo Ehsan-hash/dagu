@@ -101,8 +101,11 @@ The outline describes the page without a model request, from the same
 accessibility tree an act shows the model: headings, fields with their
 labels, selects with their choice and options, buttons, checkboxes, links
 with their absolute addresses, messages, and tables and lists by their
-columns and rows. A run of more than five alike rows shows the first three
-and counts the rest. Text typed into fields is never shown. `describe
+columns and rows. The page's own content comes first, and the site's
+header, menus, sidebars, and footer after it, so a limit on the outline
+leaves out menus rather than content. A run of more than five alike rows
+shows the first three and counts the rest. Text typed into fields is never
+shown. `describe
 --find` shows only the entries containing the text, with the entries they
 sit in; `--tree` reports the raw tree instead; `--screenshot` also saves a
 screenshot.

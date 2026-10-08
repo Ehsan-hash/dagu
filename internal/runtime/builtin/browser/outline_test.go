@@ -31,26 +31,24 @@ func fixtureSnapshot(t *testing.T, name string) pageSnapshot {
 
 // The outline shows what a person decides from: headings, fields, buttons,
 // links with their addresses, messages, and tables and lists with repeated
-// rows collapsed, nested in the landmarks and frames that hold them.
+// rows collapsed, nested in the landmarks and frames that hold them, with
+// the page's own content before the site's header, menus, and footer.
 func TestOutlineDescribesWhatAPersonSees(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct{ fixture, want string }{
-		{"login", `banner
-  navigation
-    link "Home" -> https://portal.example.com/
-    link "Help" -> https://portal.example.com/help
-heading: 取引先ポータル
+		{"login", `heading: 取引先ポータル
 form
   textbox "ログインID"
   textbox "パスワード"
   checkbox "Remember me" [checked]
   button "ログイン"
-alert: IDまたはパスワードが違います。`},
-		{"orders", `navigation
-  link "注文一覧" -> https://portal.example.com/orders
-  link "請求書" -> https://portal.example.com/invoices
-heading: 注文一覧
+alert: IDまたはパスワードが違います。
+banner
+  navigation
+    link "Home" -> https://portal.example.com/
+    link "Help" -> https://portal.example.com/help`},
+		{"orders", `heading: 注文一覧
 select "状態" = 未出荷; options: すべて, 未出荷, 出荷済み
 button "検索"
 table: 12 rows; columns: 注文番号 | 取引先 | 金額 | 状態
@@ -63,7 +61,10 @@ table: 12 rows; columns: 注文番号 | 取引先 | 金額 | 状態
   … 9 more rows like these
 button "前へ"
 text: 12件中 1 / 3 ページ
-button "次へ"`},
+button "次へ"
+navigation
+  link "注文一覧" -> https://portal.example.com/orders
+  link "請求書" -> https://portal.example.com/invoices`},
 		{"list", `heading: Items
 list
   item: Item B ¥100
@@ -78,17 +79,17 @@ radio "Price"
 textbox "Note"`},
 		{"frame", `heading: Outer
 iframe "login frame"
-  banner
-    navigation
-      link "Home" -> https://portal.example.com/
-      link "Help" -> https://portal.example.com/help
   heading: 取引先ポータル
   form
     textbox "ログインID"
     textbox "パスワード"
     checkbox "Remember me" [checked]
     button "ログイン"
-  alert: IDまたはパスワードが違います。`},
+  alert: IDまたはパスワードが違います。
+  banner
+    navigation
+      link "Home" -> https://portal.example.com/
+      link "Help" -> https://portal.example.com/help`},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			t.Parallel()
@@ -128,7 +129,7 @@ func TestOutlineFitsItsLimit(t *testing.T) {
 	assert.True(t, truncated)
 	assert.LessOrEqual(t, utf8.RuneCountInString(text), 200+utf8.RuneCountInString("… outline cut: 99 more lines; narrow it with find or allow more characters"))
 	lines := strings.Split(text, "\n")
-	assert.Equal(t, `heading: 注文一覧`, lines[3])
+	assert.Equal(t, `heading: 注文一覧`, lines[0], "the page's content comes before the site's menus")
 	assert.Regexp(t, `^… outline cut: \d+ more lines; narrow it with find or allow more characters$`, lines[len(lines)-1])
 }
 

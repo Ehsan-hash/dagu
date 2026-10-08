@@ -105,6 +105,7 @@ func renderOutline(snap pageSnapshot, opts outlineOptions) (string, bool, int) {
 	for _, root := range parseSnapshotTree(snap.Tree) {
 		entries = append(entries, b.build(root)...)
 	}
+	entries = contentFirst(entries)
 	var lines []string
 	matches := 0
 	if opts.Find != "" {
@@ -128,6 +129,10 @@ var containerRoles = []string{
 	"dialog", "alertdialog", "Iframe", "list", "listbox", "menu", "menubar", "tablist", "group",
 	"radiogroup", "toolbar", "article", "tree",
 }
+
+// furnitureRoles are the site's own parts that every page repeats: its
+// header, menus, sidebars, and footer.
+var furnitureRoles = []string{"banner", "navigation", "complementary", "contentinfo"}
 
 var messageRoles = []string{"alert", "status", "log", "marquee", "timer"}
 
@@ -186,12 +191,29 @@ func (b outlineBuilder) build(n *outlineNode) []*outlineEntry {
 		}
 		role := n.role
 		if role == "Iframe" {
-			role = "iframe"
+			// A frame is a page of its own.
+			role, children = "iframe", contentFirst(children)
 		}
 		return []*outlineEntry{{line: withName(role, n.name), shape: role, children: children}}
 	default:
 		return b.children(n)
 	}
+}
+
+// contentFirst puts what the page itself shows before the site's furniture,
+// so a limit on the outline leaves out menus rather than the content. Only
+// the page's own parts move; a menu inside the content, such as its pages,
+// stays beside what it belongs to.
+func contentFirst(entries []*outlineEntry) []*outlineEntry {
+	var content, furniture []*outlineEntry
+	for _, entry := range entries {
+		if slices.Contains(furnitureRoles, entry.shape) {
+			furniture = append(furniture, entry)
+		} else {
+			content = append(content, entry)
+		}
+	}
+	return append(content, furniture...)
 }
 
 func (b outlineBuilder) children(n *outlineNode) []*outlineEntry {
