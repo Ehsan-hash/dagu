@@ -70,13 +70,13 @@ a recording; it asks the model and records what it did.
 
 `do` also acts on an element the outline shows with its ID, without the
 model: `{"click": ID}`, `{"type": {"into": ID, "text": TEXT}}`, or
-`{"select": {"in": ID, "option": OPTION}}`. The element must still be on
-the page, have a name, and be one the operation fits: a field to type into,
-a select to pick from. The session keeps the operation as the act a step
-writes, such as `Click the "Sign in" button`, which the result reports as
-`act`, with the action it took as the act's recording, so an exported step
-replays exactly that action and heals by the act's words when the page
-changes.
+`{"select": {"in": ID, "option": OPTION}}`, each with `when` and `timeout`
+as an act takes them. The element must still be on the page, have a name,
+and be one the operation fits: a field to type into, a select to pick from.
+The session keeps the operation as the act a step writes, such as `Click the
+"Sign in" button`, which the result reports as `act`, with the action it
+took as the act's recording, so an exported step replays exactly that action
+and heals by the act's words when the page changes.
 
 The result reports the operation's index in the session's history, its
 status (`done`, `failed`, or `skipped` when its `when` does not hold), the

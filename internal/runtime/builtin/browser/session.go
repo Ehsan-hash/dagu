@@ -589,7 +589,10 @@ func (s *Sessions) Do(ctx context.Context, req DoRequest) (DoResult, error) {
 		if err != nil {
 			return DoResult{}, &SessionError{Code: CodeInvalidInput, Message: masker.MaskString(err.Error())}
 		}
-		op, preset = operation{Act: &actSpec{Instruction: instruction}}, []recordedAction{action}
+		if op, err = element.operation(instruction); err != nil {
+			return DoResult{}, err
+		}
+		preset = []recordedAction{action}
 		if err := checkOperation(op, state, values, true); err != nil {
 			return DoResult{}, err
 		}

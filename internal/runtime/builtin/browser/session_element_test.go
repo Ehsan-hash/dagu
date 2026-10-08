@@ -75,3 +75,23 @@ func TestSessionRefusesAnElementItCannotUse(t *testing.T) {
 	}
 	assert.Empty(t, ts.engine.replays, "nothing reached the page")
 }
+
+// An element operation may carry when and timeout, which its act keeps.
+func TestSessionElementOperationKeepsItsGuards(t *testing.T) {
+	t.Parallel()
+
+	ts := newTestSessions(t, pageModel(nil))
+	ts.engine.snapshot = signInPage
+	ts.engine.pageText = "Sign in"
+	opened := ts.open(SessionOptions{URL: "https://portal.example.com/login", LLM: testModel})
+
+	result, err := ts.do(opened.ID, `{"click": "0-6", "when": {"text": "Sign in"}, "timeout": "5s"}`)
+	require.NoError(t, err)
+	assert.Equal(t, OperationDone, result.Status)
+	exported, err := ts.sessions.Export(ts.context(), ExportRequest{ID: opened.ID, DAG: "orders", Step: "shop", DryRun: true})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"act":"Click the \"Sign in\" button","when":{"text":"Sign in"},"timeout":"5s"}`, string(exported.Step.With.Do[0]))
+
+	_, err = ts.do(opened.ID, `{"click": "0-6", "timeout": "soon"}`)
+	assert.Equal(t, CodeInvalidInput, sessionCode(err), "its guards are checked as an act's")
+}

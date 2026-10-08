@@ -29,17 +29,32 @@ type elementOperation struct {
 	kind, element string
 	// text is what type types, or the option select picks.
 	text string
+	// guards are its when and timeout, which its act takes as written.
+	guards map[string]json.RawMessage
 }
+
+// elementGuards are what an element operation may carry besides its kind.
+var elementGuards = []string{"when", "timeout"}
 
 // parseElementOperation reads raw as an element operation, and reports
 // false for any other operation.
 func parseElementOperation(raw json.RawMessage) (elementOperation, bool, error) {
 	var item map[string]json.RawMessage
-	if json.Unmarshal(raw, &item) != nil || len(item) != 1 {
+	if json.Unmarshal(raw, &item) != nil {
+		return elementOperation{}, false, nil
+	}
+	guards := map[string]json.RawMessage{}
+	for _, name := range elementGuards {
+		if value, ok := item[name]; ok {
+			guards[name] = value
+			delete(item, name)
+		}
+	}
+	if len(item) != 1 {
 		return elementOperation{}, false, nil
 	}
 	for kind, value := range item {
-		op := elementOperation{kind: kind}
+		op := elementOperation{kind: kind, guards: guards}
 		var err error
 		switch kind {
 		case opClick:
@@ -75,6 +90,20 @@ func parseElementOperation(raw json.RawMessage) (elementOperation, bool, error) 
 		return op, true, nil
 	}
 	return elementOperation{}, false, nil
+}
+
+// operation is the act the element operation stands for, carrying its
+// guards, checked as any act is.
+func (op elementOperation) operation(instruction string) (operation, error) {
+	item := map[string]any{opAct: instruction}
+	for name, value := range op.guards {
+		item[name] = value
+	}
+	raw, err := json.Marshal(item)
+	if err != nil {
+		return operation{}, err
+	}
+	return parseSessionOperation(raw)
 }
 
 // elementID reads an element's ID as the outline shows it, with or without
