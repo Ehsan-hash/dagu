@@ -1343,7 +1343,28 @@ func (l *ConfigLoader) loadWorkerConfig(cfg *Config, def Definition) {
 	}
 
 	l.setWorkerDefaults(cfg)
+	l.loadWorkerShutdownTimeout(cfg, def)
 	l.setPostgresPoolDefaults(&cfg.Worker.PostgresPool)
+}
+
+// defaultWorkerShutdownTimeout sits under the 90s systemd TimeoutStopSec
+// default with room for the worker's post-deadline cleanup.
+const defaultWorkerShutdownTimeout = 60 * time.Second
+
+// loadWorkerShutdownTimeout sets worker.shutdown_timeout. It defaults to
+// defaultWorkerShutdownTimeout, also when the value is not a valid duration,
+// and 0 disables the bound.
+func (l *ConfigLoader) loadWorkerShutdownTimeout(cfg *Config, def Definition) {
+	cfg.Worker.ShutdownTimeout = defaultWorkerShutdownTimeout
+	if def.Worker == nil || def.Worker.ShutdownTimeout == "" {
+		return
+	}
+	timeout, err := time.ParseDuration(def.Worker.ShutdownTimeout)
+	if err != nil {
+		l.warnings = append(l.warnings, fmt.Sprintf("Invalid worker.shutdown_timeout value: %s", def.Worker.ShutdownTimeout))
+		return
+	}
+	cfg.Worker.ShutdownTimeout = timeout
 }
 
 func (l *ConfigLoader) setCoordinatorDefaults(cfg *Config) {
@@ -2272,6 +2293,7 @@ var envBindings = []envBinding{
 	{key: "worker.labels", env: "WORKER_LABELS"},
 	{key: "worker.coordinators", env: "WORKER_COORDINATORS"},
 	{key: "worker.health_port", env: "WORKER_HEALTH_PORT"},
+	{key: "worker.shutdown_timeout", env: "WORKER_SHUTDOWN_TIMEOUT"},
 
 	// Peer
 	{key: "peer.cert_file", env: "PEER_CERT_FILE"},

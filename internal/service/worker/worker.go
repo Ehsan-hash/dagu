@@ -359,7 +359,21 @@ func cleanupErrorMessage(err error) string {
 	return stringutil.TruncUTF8Bytes(err.Error(), 1024)
 }
 
-// Stop gracefully shuts down the worker.
+const (
+	// stopCanceledRunsTimeout bounds the wait for canceled runs to exit and
+	// report their final status once the Stop context is done.
+	stopCanceledRunsTimeout = 10 * time.Second
+	// stopCleanupTimeout bounds closing the coordinator client, health server
+	// and OpenCode host once the Stop context is done.
+	stopCleanupTimeout = 5 * time.Second
+)
+
+// Stop gracefully shuts down the worker. It stops polling, sends SIGTERM to
+// running tasks and waits until they finish their cleanup window and lifecycle
+// handlers, or until ctx is done. Without a deadline on ctx, Stop can wait
+// indefinitely for a task that does not exit. When ctx is done first, Stop
+// cancels the remaining tasks, waits up to stopCanceledRunsTimeout for them to
+// exit, then up to stopCleanupTimeout to release its resources.
 func (w *Worker) Stop(ctx context.Context) error {
 	var err error
 	w.stopOnce.Do(func() {
@@ -386,6 +400,12 @@ func (w *Worker) Stop(ctx context.Context) error {
 			w.stopCancel()
 		}
 
+		// An expired ctx would fail the remaining steps at once, and the
+		// canceled tasks still need time to report their final status.
+		var cancelWait context.CancelFunc
+		ctx, cancelWait = liveStopContext(ctx, stopCanceledRunsTimeout)
+		defer cancelWait()
+
 		// Wait for all goroutines to complete (with timeout from ctx)
 		if w.stopDone != nil {
 			select {
@@ -396,6 +416,10 @@ func (w *Worker) Stop(ctx context.Context) error {
 					tag.WorkerID(w.id))
 			}
 		}
+
+		var cancelCleanup context.CancelFunc
+		ctx, cancelCleanup = liveStopContext(ctx, stopCleanupTimeout)
+		defer cancelCleanup()
 
 		// Close the global PostgreSQL pool manager if initialized
 		if w.poolManager != nil {
@@ -429,6 +453,15 @@ func (w *Worker) Stop(ctx context.Context) error {
 	})
 
 	return err
+}
+
+// liveStopContext returns ctx while it is live. Once ctx is done, it returns a
+// context that keeps ctx's values and expires after timeout.
+func liveStopContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), timeout)
 }
 
 // WaitReady blocks until the worker appears in coordinator registration.
