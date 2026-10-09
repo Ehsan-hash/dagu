@@ -106,7 +106,7 @@ from the console has the same effect on the next report (`401`).
 | --- | --- | --- |
 | Health | Dagu version, OS and architecture, uptime, services from the service registry (scheduler, coordinator, workers: count and last heartbeat), queue depth per queue, event lag, remote access level | Every report |
 | Inventory | Per DAG: name, schedules (cron and time zone), suspended, last run status and time | When its hash changes, and at least daily |
-| Runs | Per `dag.run.*` event: event ID, type, DAG name, DAG-run ID, attempt ID, status, `occurred_at`; on terminal events, failed step names and exit codes | Batched with each report |
+| Runs | Per `dag.run.*` event: event ID, type, DAG name, DAG-run ID, attempt ID, status, `occurred_at`, and `run_created_at` (when the DAG run was created, the same in every event of the run and its retries); on terminal events, failed step names and exit codes | Batched with each report |
 
 **Never sent:** logs, outputs, parameters, environment, step commands, DAG YAML,
 secret values, and error message text. Error text is opt-in
@@ -121,6 +121,12 @@ sensitive turns reporting off.
 The server reports every 60 seconds, and within 5 seconds of a `failed`,
 `aborted`, `rejected`, or `waiting` event. Dagu Cloud can lengthen the interval
 in its response (`next_report_seconds`) to shed load.
+
+Many workflows run at the top of the hour, so reports are spread out:
+
+- the first report waits a random 0 to 60 seconds after start;
+- each interval varies randomly by up to 10 percent;
+- an early report after a failure waits a random 0 to 5 seconds.
 
 ### Where it runs
 
@@ -175,7 +181,8 @@ activation's credentials, as the heartbeat is.
 | `200` | Persist `ack` as the cursor. Send inventory next time if `inventory_wanted`. |
 | `401`, `410` | Stop. The license manager handles the activation as it does for heartbeats. |
 | `413` | Halve the batch and retry. |
-| `429`, `5xx`, network error | Back off exponentially up to 5 minutes, keeping the cursor. |
+| `429` | Wait for `Retry-After`, keeping the cursor. |
+| `5xx`, network error | Back off exponentially up to 5 minutes, keeping the cursor. |
 
 New fields are optional in both directions. Dagu Cloud accepts every protocol
 version a supported Dagu release sends.
