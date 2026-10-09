@@ -511,12 +511,14 @@ func TestBaseWatchLifecycle(t *testing.T) {
 				}
 			}
 			// On Windows a base file op fails while the reader still holds it
-			// open, and a just-deleted watched directory stays delete-pending
-			// until its watch handle closes; retry until both settle.
+			// open (Go file handles do not share delete access), and a
+			// just-deleted watched directory stays delete-pending until its
+			// watch handle closes; retry until both settle.
 			retryFileOp := func(op func() error) {
 				t.Helper()
-				require.Eventually(t, func() bool { return op() == nil },
-					3*time.Second, 10*time.Millisecond)
+				require.EventuallyWithT(t, func(c *assert.CollectT) {
+					assert.NoError(c, op())
+				}, 5*time.Second, 10*time.Millisecond)
 			}
 			write := func(body string) {
 				t.Helper()
