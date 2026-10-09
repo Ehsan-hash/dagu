@@ -311,6 +311,96 @@ func TestStagehandReplayHiddenElement(t *testing.T) {
 	assert.True(t, replayed, "the field outside the dialog is visible")
 }
 
+// servePager serves a page that draws its list from a request it makes on
+// load and again for each press of Next, as pages paged by buttons do. Each
+// answer sends its headers at once and its body a moment later.
+func servePager(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rows" {
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			time.Sleep(800 * time.Millisecond)
+			_, _ = fmt.Fprintf(w, "Row of page %s", r.URL.Query().Get("page"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, `<p id="rows">Loading</p><button id="next">Next</button><script>
+let page = 1;
+function load() { fetch('/rows?page=' + page).then(r => r.text()).then(t => { document.getElementById('rows').textContent = t; }); }
+document.getElementById('next').onclick = () => { page++; load(); };
+load();
+</script>`)
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+// A page that draws what it fetches shows it once going there or pressing a
+// button returns, so the next operation reads it rather than what came
+// before, even when the press is replayed without a model call.
+func TestStagehandWaitsForWhatThePageFetches(t *testing.T) {
+	t.Parallel()
+
+	eng := launchBrowser(t, launchOptions{Generate: (&shopModel{}).generate})
+	require.NoError(t, eng.Goto(t.Context(), servePager(t), time.Minute))
+	text, err := eng.PageText(t.Context())
+	require.NoError(t, err)
+	assert.Contains(t, text, "Row of page 1", "the list the page fetched on load")
+
+	replayed, err := eng.Replay(t.Context(), recordedAction{Selector: "xpath=/html/body/button[1]", Method: "click"}, nil, time.Minute)
+	require.NoError(t, err)
+	require.True(t, replayed)
+	text, err = eng.PageText(t.Context())
+	require.NoError(t, err)
+	assert.Contains(t, text, "Row of page 2", "the list the press fetched")
+}
+
+// serveSignIn serves a page whose Sign in button sends a request and then
+// moves to a home page, as signing in does. The home page draws its greeting
+// from a request it makes after loading.
+func serveSignIn(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/session":
+			time.Sleep(300 * time.Millisecond)
+		case "/greeting":
+			time.Sleep(800 * time.Millisecond)
+			_, _ = io.WriteString(w, "Welcome back")
+		case "/home":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, `<p id="greeting">Loading</p><script>
+fetch('/greeting').then(r => r.text()).then(t => { document.getElementById('greeting').textContent = t; });
+</script>`)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, `<button id="sign-in">Sign in</button><script>
+document.getElementById('sign-in').onclick = () => fetch('/session', {method: 'POST'}).then(() => location.assign('/home'));
+</script>`)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+// A press that leaves for another page only once its own request answers
+// waits for that page as going there does, so the next operation reads what
+// the new page fetches.
+func TestStagehandWaitsForThePageAPressOpens(t *testing.T) {
+	t.Parallel()
+
+	eng := launchBrowser(t, launchOptions{Generate: (&shopModel{}).generate})
+	require.NoError(t, eng.Goto(t.Context(), serveSignIn(t), time.Minute))
+
+	replayed, err := eng.Replay(t.Context(), recordedAction{Selector: "xpath=/html/body/button[1]", Method: "click"}, nil, time.Minute)
+	require.NoError(t, err)
+	require.True(t, replayed)
+	text, err := eng.PageText(t.Context())
+	require.NoError(t, err)
+	assert.Contains(t, text, "Welcome back", "the greeting the home page fetched")
+}
+
 // menuPage adds an Approve button once its menu is opened.
 const menuPage = `<p id="status">pending</p>
 <button onclick="openMenu()">Open menu</button>

@@ -46,7 +46,43 @@ const (
 	// runtime failed to start, so a slow request cannot use up the next one's
 	// time.
 	unstartedCallTimeout = 5 * time.Second
+	// settleQuiet is how long a page goes without a request in flight or a
+	// change to its document before what an action started counts as done;
+	// settleTimeout bounds the wait, and settlePoll spaces its checks.
+	settleQuiet   = 500 * time.Millisecond
+	settleTimeout = 5 * time.Second
+	settlePoll    = 100 * time.Millisecond
 )
+
+// watchExpression counts the page's requests in flight, including reads of
+// their answers, and notes when its document last changed, once per document,
+// so the end of what an action starts on the page, such as a list the page
+// fetches and draws, can be told.
+const watchExpression = `(() => {
+  if (window.__daguSettle) return true;
+  const s = window.__daguSettle = {pending: 0, changed: Date.now()};
+  const start = () => { s.pending++; s.changed = Date.now(); };
+  const done = () => { s.pending--; s.changed = Date.now(); };
+  const fetch = window.fetch;
+  if (fetch) window.fetch = function (...args) { start(); return fetch.apply(window, args).finally(done); };
+  for (const name of ['arrayBuffer', 'blob', 'bytes', 'formData', 'json', 'text']) {
+    const read = Response.prototype[name];
+    if (read) Response.prototype[name] = function (...args) { start(); return read.apply(this, args).finally(done); };
+  }
+  const send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (...args) {
+    start();
+    this.addEventListener('loadend', done, {once: true});
+    try { return send.apply(this, args); } catch (e) { done(); throw e; }
+  };
+  new MutationObserver(() => { s.changed = Date.now(); }).observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
+  return true;
+})()`
+
+// quietExpression reports whether the page has gone settleQuiet without a
+// request in flight or a change to its document, or null when the document
+// was never watched, as one an action navigated to is not.
+var quietExpression = fmt.Sprintf(`(() => { const s = window.__daguSettle; return s ? s.pending <= 0 && Date.now() - s.changed >= %d : null; })()`, settleQuiet.Milliseconds())
 
 // pageTextExpression reads the text a person sees on the page.
 const pageTextExpression = `document.body ? document.body.innerText : ""`
@@ -313,10 +349,14 @@ func (e *stagehandEngine) Goto(ctx context.Context, url string, timeout time.Dur
 		_, err = page.Goto(ctx, url, &stagehand.PageNavigationOptions{Timeout: new(int(timeout.Milliseconds()))})
 		return struct{}{}, err
 	})
+	if err == nil {
+		e.settle(ctx)
+	}
 	return err
 }
 
 func (e *stagehandEngine) Act(ctx context.Context, instruction string, variables map[string]string, timeout time.Duration) (actOutcome, error) {
+	e.watch(ctx)
 	result, err := boundCall(ctx, timeout+callTimeoutSlack, func(ctx context.Context) (stagehand.ActResult, error) {
 		return e.client.Act(ctx, stagehand.ActInstruction(instruction), actOptions(variables, timeout))
 	})
@@ -325,6 +365,9 @@ func (e *stagehandEngine) Act(ctx context.Context, instruction string, variables
 	}
 	if err != nil {
 		return actOutcome{}, err
+	}
+	if result.Data.Success {
+		e.settle(ctx)
 	}
 	outcome := actOutcome{Message: result.Data.Message, Success: result.Data.Success}
 	for _, action := range result.Data.Actions {
@@ -356,6 +399,7 @@ func (e *stagehandEngine) Replay(ctx context.Context, recorded recordedAction, v
 	if recorded.Method != "" {
 		action.Method = new(recorded.Method)
 	}
+	e.watch(ctx)
 	result, err := boundCall(ctx, timeout+callTimeoutSlack, func(ctx context.Context) (stagehand.ActResult, error) {
 		return e.client.Act(ctx, stagehand.ObservedAction(action), actOptions(variables, timeout))
 	})
@@ -368,7 +412,53 @@ func (e *stagehandEngine) Replay(ctx context.Context, recorded recordedAction, v
 		}
 		return false, nil
 	}
+	if result.Data.Success {
+		e.settle(ctx)
+	}
 	return result.Data.Success, nil
+}
+
+// watch readies the document the page shows to tell when what an action
+// starts on it has finished.
+func (e *stagehandEngine) watch(ctx context.Context) {
+	_, _ = boundCall(ctx, e.pageCallTimeout, func(ctx context.Context) (json.RawMessage, error) {
+		page, err := e.page(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return page.Evaluate(ctx, watchExpression)
+	})
+}
+
+// settle waits, up to settleTimeout, for what an action started to finish
+// before the next operation reads the page: a new document until its network
+// is idle, and the document the action began on until its requests end and
+// it stops changing. A page that does not settle in time is left as it is.
+func (e *stagehandEngine) settle(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, settleTimeout)
+	defer cancel()
+	page, err := e.page(ctx)
+	if err != nil {
+		return
+	}
+	for {
+		quiet, err := page.Evaluate(ctx, quietExpression)
+		if err == nil && string(quiet) == "true" {
+			return
+		}
+		// A page that can't be read may be between documents, and one that
+		// reports no quiet state shows a document watch never readied; both
+		// wait as a newly loaded page does.
+		if err != nil || string(quiet) != "false" {
+			_ = page.WaitForLoadState(ctx, stagehand.LoadStateNetworkIdle, new(int(settleTimeout.Milliseconds())))
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(settlePoll):
+		}
+	}
 }
 
 // targetVisible reports whether selector, resolved as a replayed action
