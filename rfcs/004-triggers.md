@@ -191,9 +191,28 @@ dag.run.*     ─┘
 - **The run ID is derived** from the event ID, DAG, and trigger. An event seen
   twice, from a sender retry or a redelivery, maps to a run that already
   exists, and nothing new starts.
-- **Retention.** The matcher must stay within the event store's retention
-  (`event_store.retention_days`, one day by default). Events older than that
+- **Retention.** Triggers make the event store an input of execution. When
+  any trigger exists and `event_store.retention_days` is not set, retention is
+  7 days instead of 1. The matcher must stay within it; events older than that
   are lost and counted as missed.
+
+## Building a trigger in the UI
+
+Writing gojq is not required. On a DAG, **Add trigger**:
+
+1. Pick the source.
+2. Pick event types from a list: the sender's documented types for `github`,
+   `stripe`, and `slack`; the types seen in recent deliveries for `webhook`.
+3. Copy the URL: the local one, and the public one when the server is
+   connected to Dagu Cloud. For a preset source, Dagu generates the signing
+   secret to paste into the sender and stores it as a Dagu secret.
+4. Click **Send test**, or wait for a real delivery.
+5. Click a field in the delivery to add a condition (equals, contains,
+   exists) or to map it to a param. The result against that delivery shows as
+   each one is added.
+
+The UI writes the trigger into the DAG's YAML, which stays editable for
+anything the builder does not cover.
 
 ## Deliveries view
 
@@ -209,8 +228,8 @@ Each trigger shows its recent deliveries:
 - **Replay** re-enqueues a delivery with a new run ID and marks the run as a
   replay.
 - **Send test** posts the source's sample payload.
-- **Condition editor:** shows the result of the condition and params against
-  the last delivery as they are typed.
+- **Editing YAML by hand** shows the result of the condition and params
+  against the last delivery as they are typed.
 
 ## Existing per-DAG webhooks
 
@@ -251,8 +270,12 @@ In v3.0, the per-DAG webhook becomes the DAG's built-in `webhook` trigger:
 
 | Release | Ships |
 | --- | --- |
-| v2.20 | Trigger model, local ingress, all sources, Deliveries, `DAGU_EVENT_FILE`. |
-| v3.0 | Public ingress through Dagu Cloud (with RFC 002 remote access); the per-DAG webhook becomes a `webhook` trigger. |
+| v2.20 | Trigger model; `webhook`, `file`, and `dag` sources; local and public ingress; the UI builder and Deliveries; `DAGU_EVENT_FILE`; 7-day event retention when triggers exist. |
+| v2.21 | `github`, `stripe`, and `slack` sources. |
+| v3.0 | The per-DAG webhook becomes a `webhook` trigger. |
+
+Public ingress ships in v2.20 because receiving webhooks behind a firewall is
+useful to a single server; it does not wait for remote access.
 
 ## Verification and acceptance criteria
 
@@ -285,9 +308,9 @@ In v3.0, the per-DAG webhook becomes the DAG's built-in `webhook` trigger:
 ## Consequences
 
 - Third-party services can start DAGs without a shim, on-prem included.
-- The event store becomes the input of execution, not only a record of it.
-  Its retention bounds how long the scheduler can be down without missing
-  events.
+- The event store becomes an input of execution, not only a record of it.
+  Its retention, 7 days by default once triggers exist, bounds how long the
+  scheduler can be down without missing events.
 - Dagu Cloud's relay carries deliveries for servers that never enable remote
   access.
 

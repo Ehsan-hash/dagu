@@ -13,8 +13,8 @@ Dagu Cloud without inbound ports, VPN, SSH, or remote desktop.
 
 Activating an online license is the connection. There is no separate connect
 command. Reporting starts with the license and sends metadata only. Remote
-access is off until the server's administrator turns it on in the server's own
-configuration, and it never exceeds the role that administrator sets.
+access is off until an administrator of the server turns it on, on the server
+itself, and it never exceeds the role they choose.
 
 Workflows never depend on Dagu Cloud. Losing the connection stops reports and
 remote access, nothing else.
@@ -213,17 +213,25 @@ version a supported Dagu release sends.
 
 ### Turning it on
 
+Remote access is set on the server, never from Dagu Cloud. The level is the
+highest role any remote user gets.
+
+- **UI.** The license settings page has a **Remote access** control for the
+  server's admins: off, viewer, operator, developer, manager, or admin. It
+  starts off. A change applies at once and is persisted in the data directory;
+  turning it off closes the tunnel and cancels requests in flight.
+- **Config.** For servers managed as code, `cloud.remote_access` fixes the
+  level, and the UI shows it read-only.
+
 ```yaml
 cloud:
   report: true                   # health, workflow list, run status
   report_error_messages: false
   remote_access: off             # off | viewer | operator | developer | manager | admin
+                                 # omit to set it in the UI
 ```
 
-`cloud.remote_access` is the highest role any remote user gets. The license
-settings page shows the level and has a **Pause remote access** switch for
-admins. Pausing is persisted, closes the tunnel at once, and cancels requests
-in flight. Raising the level requires changing the configuration on the server.
+A `cloud:` identity can never change the level (see below).
 
 ### Identity
 
@@ -293,7 +301,7 @@ the relay and announced in its reply to `hello`.
 | Unreachable longer than event retention | The next report carries a gap. |
 | Relay unreachable | The tunnel reconnects with backoff. Remote users see the server as offline. |
 | License revoked or server disconnected | Reporting and the tunnel stop at once. |
-| Remote access paused | The tunnel closes; requests in flight are cancelled. |
+| Remote access turned off | The tunnel closes, unless public triggers keep it open for deliveries; requests in flight are cancelled. |
 | Assertion invalid, expired, replayed, or for another server | `401`; nothing runs. |
 
 ## Observability
@@ -310,7 +318,8 @@ the relay and announced in its reply to `hello`.
 | Release | Ships |
 | --- | --- |
 | v2.19 | Browser approval; reporting; the `cloud` config section. Dagu Cloud's report endpoint must be live first. |
-| v3.0 | Remote access: the `dagucloud` tunnel provider, assertions, the UI bar. License audience check. |
+| v2.20 | The `dagucloud` tunnel provider, carrying webhook deliveries for public triggers only (RFC 004). |
+| v3.0 | Remote access over the same connection: assertions, the Remote access control, the UI bar. License audience check. |
 
 Older servers keep working as they do: they heartbeat and never report.
 
@@ -322,12 +331,14 @@ Older servers keep working as they do: they heartbeat and never report.
 3. Stopping the scheduler shows it as down within 2 minutes.
 4. Two hours without network, then reconnecting: no lost and no duplicated
    runs.
-5. With `remote_access: viewer`, a Dagu Cloud admin cannot start, retry,
-   stop, or edit, and cannot reach user, API key, license, or terminal
-   endpoints.
-6. An assertion for one server is rejected by another; expired, replayed,
+5. With remote access set to viewer, a Dagu Cloud admin cannot start, retry,
+   stop, or edit, and cannot reach user, API key, license, terminal, or
+   remote access settings.
+6. A local admin turning remote access off ends the next remote request with
+   `403`, and cancels any in flight.
+7. An assertion for one server is rejected by another; expired, replayed,
    wrong-audience, and license tokens are rejected.
-7. No inbound port is opened. Outbound traffic goes only to the console and
+8. No inbound port is opened. Outbound traffic goes only to the console and
    relay hosts over 443.
 
 ## Alternatives considered
