@@ -3211,9 +3211,57 @@ export interface paths {
         put?: never;
         /**
          * Deactivate the current license
-         * @description Removes local activation data and returns to community mode. Admin only.
+         * @description Frees the server's slot in Dagu Console, removes local activation data, and returns to community mode. Admin only.
          */
         post: operations["deactivateLicense"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/license/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Dagu Console connection request
+         * @description Returns the state of the latest request to connect this server to Dagu Console. Admin only.
+         */
+        get: operations["getLicenseConnect"];
+        put?: never;
+        /**
+         * Connect this server to Dagu Console
+         * @description Starts a request for a license from Dagu Console, or returns the pending one. Open connectUrl to approve it; the license is installed once a workspace owner approves. Admin only.
+         */
+        post: operations["startLicenseConnect"];
+        /**
+         * Cancel the Dagu Console connection request
+         * @description Abandons the pending request to connect this server to Dagu Console. Admin only.
+         */
+        delete: operations["cancelLicenseConnect"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/license/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check in with Dagu Console now
+         * @description Refreshes the license from Dagu Console instead of waiting for the next hourly check-in. Admin only.
+         */
+        post: operations["refreshLicense"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6573,6 +6621,39 @@ export interface components {
             warningCode: string;
             /** @description User-facing explanation when a configured license is unusable */
             error: string;
+            /** @description Name that identifies this server in Dagu Console */
+            serverName?: string;
+            /** @description Identifier of the loaded license */
+            licenseId?: string;
+            /** @description Dagu Console workspace that owns the license */
+            workspace?: string;
+            /**
+             * @description How the license reached this server
+             * @enum {string}
+             */
+            connectedVia?: LicenseStatusResponseConnectedVia;
+            /** @description Identifier of this server in Dagu Console, for licenses that check in */
+            serverId?: string;
+            /** @description Last time Dagu Console accepted this server's check-in */
+            lastCheckIn?: string;
+            /** @description Dagu Console page for this server */
+            consoleUrl?: string;
+        };
+        /** @description Request to connect this server to Dagu Console */
+        LicenseConnectStatus: {
+            /**
+             * @description Progress of the request
+             * @enum {string}
+             */
+            state: LicenseConnectStatusState;
+            /** @description Dagu Console page that approves the request */
+            connectUrl?: string;
+            /** @description Short code Dagu Console shows so the approver can confirm the request */
+            code?: string;
+            /** @description When the request expires unless approved */
+            expiresAt?: string;
+            /** @description Why the request failed */
+            error?: string;
         };
         /** @description Request body for changing password */
         ChangePasswordRequest: {
@@ -17482,6 +17563,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         message?: string;
+                        /** @description Dagu Console could not be told, so the server's slot stays in use until it is disconnected there */
+                        releaseFailed?: boolean;
                     };
                 };
             };
@@ -17496,6 +17579,197 @@ export interface operations {
             };
             /** @description Insufficient permissions */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unexpected error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getLicenseConnect: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current connection request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseConnectStatus"];
+                };
+            };
+            /** @description Insufficient permissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unexpected error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    startLicenseConnect: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current connection request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseConnectStatus"];
+                };
+            };
+            /** @description Insufficient permissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The license is set outside Dagu or the server already has an active license */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unexpected error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelLicenseConnect: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current connection request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseConnectStatus"];
+                };
+            };
+            /** @description Insufficient permissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unexpected error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    refreshLicense: {
+        parameters: {
+            query?: {
+                /** @description name of the remote node */
+                remoteNode?: components["parameters"]["RemoteNode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description License status after the check-in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseStatusResponse"];
+                };
+            };
+            /** @description The license does not check in with Dagu Console */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient permissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dagu Console could not be reached */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20913,6 +21187,20 @@ export enum UserAuthProvider {
     builtin = "builtin",
     oidc = "oidc",
     proxy = "proxy"
+}
+export enum LicenseStatusResponseConnectedVia {
+    console = "console",
+    key = "key",
+    env = "env",
+    config = "config",
+    file = "file"
+}
+export enum LicenseConnectStatusState {
+    idle = "idle",
+    pending = "pending",
+    granted = "granted",
+    failed = "failed",
+    expired = "expired"
 }
 export enum APIKeyAllowedSurfaces {
     rest_api = "rest_api",
