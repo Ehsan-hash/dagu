@@ -200,8 +200,10 @@ version a supported Dagu release sends.
 ```
 
 - A `dagucloud` provider joins `tailscale` behind `tunnel.Provider`. It runs
-  only when remote access is on and the license is online, and it reports its
-  state through `GET /services/tunnel`.
+  while the license is online and either remote access is on or a trigger is
+  `public` (RFC 004). With remote access off, it answers every proxied request
+  with `403` and carries only webhook deliveries. It reports its state through
+  `GET /services/tunnel`.
 - The provider receives the server's HTTP handler, not its listen address.
   Tunnel requests never pass through the public listener, and the public
   listener never accepts Dagu Cloud assertions.
@@ -278,6 +280,7 @@ the existing relay where they apply.
 | Server → relay | binary response body chunks for `id`, then `end{id}` |
 | Either | `cancel{id}` |
 | Server → relay | `"ping"` every 15 seconds; the relay answers `"pong"` |
+| Both | `hooks`, `hooked`, `delivery`, `delivered` for public triggers (RFC 004) |
 
 Streaming responses carry server-sent events and live logs. Limits are set by
 the relay and announced in its reply to `hello`.
