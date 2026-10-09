@@ -1543,6 +1543,7 @@ const english = {
   'Specific date, month, or year': 'Specific date, month, or year',
   'Specific date/month/year': 'Specific date/month/year',
   'Specific period': 'Specific period',
+  Split: 'Split',
   'Standard Output Log': 'Standard Output Log',
   'Star and add to the sidebar for everyone':
     'Star and add to the sidebar for everyone',
@@ -2147,6 +2148,9 @@ const english = {
   'Wiki page management is not available on this server.':
     'Wiki page management is not available on this server.',
   'Graph interactions': 'Graph interactions',
+  'Drag: Pan the graph': 'Drag: Pan the graph',
+  'Resize graph': 'Resize graph',
+  'Ctrl/Cmd + scroll or pinch: Zoom': 'Ctrl/Cmd + scroll or pinch: Zoom',
   '<No log output>': '<No log output>',
   LIVE: 'LIVE',
   'More actions': 'More actions',
@@ -3847,6 +3851,7 @@ const chinese = {
   'Specific date, month, or year': '指定日期、月份或年份',
   'Specific date/month/year': '指定日期/月/年',
   'Specific period': '特定期间',
+  Split: '分屏',
   'Standard Output Log': '标准输出日志',
   'Star and add to the sidebar for everyone': '加星并添加到所有人的侧边栏',
   'Star shared sidebar shortcuts, choose the shared default, or remove views saved for this remote and workspace.':
@@ -4432,6 +4437,9 @@ const chinese = {
   'Wiki page management is not available on this server.':
     '此服务器不提供 Wiki 页面管理功能。',
   'Graph interactions': '图表交互',
+  'Drag: Pan the graph': '拖动：平移图表',
+  'Resize graph': '调整图表大小',
+  'Ctrl/Cmd + scroll or pinch: Zoom': 'Ctrl/Cmd + 滚轮或触控板捏合：缩放',
   '<No log output>': '<无日志输出>',
   LIVE: '实时',
   'More actions': '更多操作',
@@ -6178,6 +6186,7 @@ const japanese = {
   'Specific date, month, or year': '特定の日付、月、または年',
   'Specific date/month/year': '特定の日付/月/年',
   'Specific period': '特定の期間',
+  Split: '分割',
   'Standard Output Log': '標準出力ログ',
   'Star and add to the sidebar for everyone':
     'スターリングして全員用のサイドバーに追加',
@@ -6785,6 +6794,10 @@ const japanese = {
   'Wiki page management is not available on this server.':
     'このサーバーでは Wiki ページ管理を利用できません。',
   'Graph interactions': 'グラフ操作',
+  'Drag: Pan the graph': 'ドラッグ: グラフを移動',
+  'Resize graph': 'グラフのサイズを変更',
+  'Ctrl/Cmd + scroll or pinch: Zoom':
+    'Ctrl/Cmd + スクロールまたはピンチ: ズーム',
   '<No log output>': '<ログ出力なし>',
   LIVE: 'ライブ',
   'More actions': 'その他の操作',

@@ -4,11 +4,6 @@
 import { useErrorModal } from '@/components/ui/error-modal';
 import { Tab, Tabs } from '@/components/ui/tabs';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   ActivitySquare,
   AlertTriangle,
   Archive,
@@ -17,9 +12,7 @@ import {
   FileCode,
   ListChecks,
   GanttChart,
-  GripHorizontal,
   MessageSquare,
-  MousePointerClick,
   Package,
   ShieldCheck,
   ScrollText,
@@ -60,6 +53,11 @@ import {
   StatusUpdateModal,
 } from './dag-execution';
 import { FlowchartType, Graph, TimelineChart } from './visualization';
+import { GraphInteractionsHint } from './visualization/GraphInteractionsHint';
+import {
+  GraphResizeHandle,
+  useResizableGraphHeight,
+} from './visualization/GraphResizeHandle';
 import { HumanTasksTab } from './human-task';
 import { I18nText } from '@/i18n/I18nText';
 import { I18nProps } from '@/i18n/I18nProps';
@@ -139,7 +137,11 @@ function DAGStatus({
     cookie['flowchart']
   );
 
-  const [graphHeight, setGraphHeight] = useState(380);
+  const {
+    height: graphHeight,
+    graphBoxRef,
+    handleProps: graphResizeHandleProps,
+  } = useResizableGraphHeight();
 
   const [selectedStep, setSelectedStep] = useState<
     components['schemas']['Step'] | undefined
@@ -161,24 +163,6 @@ function DAGStatus({
     }
   }, [activeTab, closeStepDetails]);
 
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startHeight = graphHeight;
-
-    const handleMouseMove = (mv: MouseEvent) => {
-      const newHeight = startHeight + (mv.clientY - startY);
-      setGraphHeight(Math.max(200, newHeight));
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
   // State for log viewer
   const [logViewer, setLogViewer] = useState<{
     isOpen: boolean;
@@ -878,38 +862,13 @@ function DAGStatus({
               displayDAGRun.nodes.length > 0 && (
                 <div className="flex flex-col">
                   <BorderedBox className="pt-4 px-4 pb-0 flex flex-col items-stretch overflow-hidden">
-                    <div className="flex justify-end mb-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            className="flex h-7 w-7 items-center justify-center rounded bg-muted text-muted-foreground cursor-help"
-                            aria-label={ts('Graph interactions')}
-                          >
-                            <MousePointerClick className="h-3.5 w-3.5" />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="space-y-1">
-                            <p>
-                              <I18nText text={'Click: Inspect step details'} />
-                            </p>
-                            <p>
-                              <I18nText
-                                text={'Double-click: Navigate to sub dagRun'}
-                              />
-                            </p>
-                            {config.permissions.runDags && (
-                              <p>
-                                <I18nText
-                                  text={'Right-click: Update node status'}
-                                />
-                              </p>
-                            )}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <div className="w-full min-w-0 max-w-full overflow-x-auto">
+                    <GraphInteractionsHint
+                      className="mb-2"
+                      inspect
+                      openSubRun
+                      updateStatus={config.permissions.runDags}
+                    />
+                    <div ref={graphBoxRef} className="w-full min-w-0">
                       <Graph
                         steps={displayDAGRun.nodes}
                         name={displayDAGRun.name}
@@ -927,12 +886,7 @@ function DAGStatus({
                         height={graphHeight}
                       />
                     </div>
-                    <div
-                      className="flex justify-center items-center py-2 cursor-row-resize hover:bg-muted/50 transition-colors w-full select-none"
-                      onMouseDown={handleResizeMouseDown}
-                    >
-                      <GripHorizontal className="h-4 w-4 text-muted-foreground/50" />
-                    </div>
+                    <GraphResizeHandle {...graphResizeHandleProps} />
                   </BorderedBox>
                 </div>
               )}
