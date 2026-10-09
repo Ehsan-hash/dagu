@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,6 +80,122 @@ func TestUpdateRowsByKeyAndSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dueStyle.CustomNumFmt)
 	assert.Equal(t, fmtDate, *dueStyle.CustomNumFmt, "a date written into a date column keeps the format")
+}
+
+func TestWithLockWaiterHonorsCancellation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "locked.xlsx")
+	entered := make(chan struct{})
+	releaseAttempt := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), path, LockOptions{}, func() (*struct{}, error) {
+			close(entered)
+			<-releaseAttempt
+			return nil, nil
+		})
+		ownerDone <- err
+	}()
+	t.Cleanup(func() {
+		close(releaseAttempt)
+		require.NoError(t, <-ownerDone)
+	})
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	waiterRan := false
+	_, err := withLock(ctx, path, LockOptions{}, func() (*struct{}, error) {
+		waiterRan = true
+		return nil, nil
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.False(t, waiterRan)
+}
+
+func TestWithLockDifferentPathsRunIndependently(t *testing.T) {
+	pathA := filepath.Join(t.TempDir(), "a.xlsx")
+	pathB := filepath.Join(t.TempDir(), "b.xlsx")
+	entered := make(chan struct{})
+	releaseAttempt := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), pathA, LockOptions{}, func() (*struct{}, error) {
+			close(entered)
+			<-releaseAttempt
+			return nil, nil
+		})
+		ownerDone <- err
+	}()
+	t.Cleanup(func() {
+		close(releaseAttempt)
+		require.NoError(t, <-ownerDone)
+	})
+	<-entered
+
+	otherDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), pathB, LockOptions{}, func() (*struct{}, error) { return nil, nil })
+		otherDone <- err
+	}()
+	select {
+	case err := <-otherDone:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		assert.Fail(t, "different workbook path remained blocked")
+	}
+}
+
+func TestWithLockSymlinkAliasesShareTransaction(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	aliasDir := filepath.Join(root, "alias")
+	require.NoError(t, os.Mkdir(realDir, 0o755))
+	if err := os.Symlink(realDir, aliasDir); err != nil {
+		t.Skipf("symbolic links are not supported here: %v", err)
+	}
+	ownerPath := filepath.Join(aliasDir, "new.xlsx")
+	waiterPath := filepath.Join(realDir, "new.xlsx")
+
+	entered := make(chan struct{})
+	releaseAttempt := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), ownerPath, LockOptions{}, func() (*struct{}, error) {
+			close(entered)
+			<-releaseAttempt
+			return nil, nil
+		})
+		ownerDone <- err
+	}()
+	t.Cleanup(func() {
+		close(releaseAttempt)
+		require.NoError(t, <-ownerDone)
+	})
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	waiterRan := false
+	_, err := withLock(ctx, waiterPath, LockOptions{}, func() (*struct{}, error) {
+		waiterRan = true
+		return nil, nil
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.False(t, waiterRan)
+}
+
+func TestWithLockReclaimsIdlePathEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reclaimed.xlsx")
+	_, err := withLock(context.Background(), path, LockOptions{}, func() (*struct{}, error) {
+		return nil, nil
+	})
+	require.NoError(t, err)
+
+	key := workbookPathLockKey(path)
+	workbookPathLocks.Lock()
+	_, present := workbookPathLocks.entries[key]
+	workbookPathLocks.Unlock()
+	assert.False(t, present)
 }
 
 func TestUpdateRowsDefaultSetAndRowNumber(t *testing.T) {

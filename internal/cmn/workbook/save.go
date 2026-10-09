@@ -114,8 +114,14 @@ func replaceAtomically(path, ext string, fill func(tmp string) error) error {
 // withLock runs a whole open-modify-save sequence, retrying while the
 // workbook is held by another program and the lock options allow.
 func withLock[T any](ctx context.Context, path string, opts LockOptions, attempt func() (*T, error)) (*T, error) {
+	release, err := acquireWorkbookPathLock(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	var result *T
-	err := withLockRetry(ctx, path, opts, func() error {
+	err = withLockRetry(ctx, path, opts, func() error {
 		var err error
 		result, err = attempt()
 		return err
