@@ -102,7 +102,8 @@ func TestIsLikelyLocalDAGArg(t *testing.T) {
 	}
 }
 
-func TestRemoteResolveDAGRejectsUppercaseYAMLBeforeRequest(t *testing.T) {
+// TestRemoteResolveLocalYAML verifies mixed-case local YAML arguments are rejected before HTTP.
+func TestRemoteResolveLocalYAML(t *testing.T) {
 	t.Parallel()
 
 	var requested atomic.Bool

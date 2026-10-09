@@ -2935,7 +2935,8 @@ steps:
 	})
 }
 
-func TestLoadResolvesMixedCaseYAMLExtensionInDAGsDir(t *testing.T) {
+// TestLoadYAMLCase verifies configured DAG directory lookup preserves mixed-case YAML filenames.
+func TestLoadYAMLCase(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {

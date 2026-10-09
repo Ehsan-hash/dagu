@@ -98,7 +98,8 @@ func TestRestoreDAGFromStatus_SMTP(t *testing.T) {
 	}
 }
 
-func TestExtractDAGNameFromMixedCaseYAMLExtension(t *testing.T) {
+// TestExtractDAGNameYAMLCase verifies mixed-case YAML paths return authored DAG metadata names.
+func TestExtractDAGNameYAMLCase(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
