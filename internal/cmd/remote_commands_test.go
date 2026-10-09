@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -82,6 +83,9 @@ func TestIsLikelyLocalDAGArg(t *testing.T) {
 	}{
 		{name: "yaml suffix", arg: "workflow.yaml", want: true},
 		{name: "yml suffix", arg: "workflow.yml", want: true},
+		{name: "uppercase yaml suffix", arg: "workflow.YAML", want: true},
+		{name: "mixed case yml suffix", arg: "workflow.Yml", want: true},
+		{name: "misleading yaml suffix", arg: "workflow.yaml.bak", want: false},
 		{name: "posix separator", arg: "dir/workflow", want: true},
 		{name: "windows drive path", arg: `C:\dags\workflow`, want: true},
 		{name: "windows unc path", arg: `\\server\dags\workflow`, want: true},
@@ -96,6 +100,22 @@ func TestIsLikelyLocalDAGArg(t *testing.T) {
 			assert.Equal(t, tt.want, isLikelyLocalDAGArg(tt.arg))
 		})
 	}
+}
+
+func TestRemoteResolveDAGRejectsUppercaseYAMLBeforeRequest(t *testing.T) {
+	t.Parallel()
+
+	var requested atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requested.Store(true)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := &remoteClient{baseURL: server.URL, client: server.Client()}
+	_, err := client.resolveDAG(context.Background(), "FLOW.YAML")
+	require.ErrorContains(t, err, "remote contexts only operate on DAGs")
+	assert.False(t, requested.Load())
 }
 
 func TestRemoteStatusValueRejectsNone(t *testing.T) {

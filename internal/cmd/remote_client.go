@@ -17,6 +17,7 @@ import (
 	"time"
 
 	api "github.com/dagucloud/dagu/v2/api/v1"
+	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 	"github.com/dagucloud/dagu/v2/internal/cmn/stringutil"
 )
 
@@ -139,7 +140,7 @@ func (c *remoteClient) resolveDAG(ctx context.Context, arg string) (*api.DAGFile
 }
 
 func isLikelyLocalDAGArg(arg string) bool {
-	if strings.HasSuffix(arg, ".yaml") || strings.HasSuffix(arg, ".yml") {
+	if fileutil.IsYAMLFile(arg) {
 		return true
 	}
 	if strings.Contains(arg, "/") {
