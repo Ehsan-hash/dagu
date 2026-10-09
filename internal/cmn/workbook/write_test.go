@@ -53,8 +53,10 @@ func TestWriteNestedPath(t *testing.T) {
 func TestWriteNoDirectoriesWithoutSave(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		call func(string) error
+		name        string
+		call        func(string) error
+		wantErr     bool
+		expectedErr error
 	}{
 		{
 			name: "dry run",
@@ -62,6 +64,7 @@ func TestWriteNoDirectoriesWithoutSave(t *testing.T) {
 				_, err := Write(context.Background(), path, orders(), WriteOptions{Header: true, DryRun: true})
 				return err
 			},
+			wantErr: false,
 		},
 		{
 			name: "canceled context",
@@ -71,6 +74,8 @@ func TestWriteNoDirectoriesWithoutSave(t *testing.T) {
 				_, err := Write(ctx, path, orders(), WriteOptions{Header: true})
 				return err
 			},
+			wantErr:     true,
+			expectedErr: context.Canceled,
 		},
 		{
 			name: "invalid input",
@@ -81,18 +86,18 @@ func TestWriteNoDirectoriesWithoutSave(t *testing.T) {
 				})
 				return err
 			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "nested", "output.xlsx")
 			err := tt.call(path)
-			switch tt.name {
-			case "dry run":
+			if !tt.wantErr {
 				require.NoError(t, err)
-			case "canceled context":
-				require.ErrorIs(t, err, context.Canceled)
-			default:
+			} else if tt.expectedErr != nil {
+				require.ErrorIs(t, err, tt.expectedErr)
+			} else {
 				require.Error(t, err)
 			}
 			_, statErr := os.Stat(filepath.Dir(path))
