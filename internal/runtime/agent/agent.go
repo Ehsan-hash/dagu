@@ -1313,14 +1313,14 @@ func (a *Agent) Run(ctx context.Context) (runErr error) {
 	return lastErr
 }
 
+// shouldDelayTerminalStatus keeps local terminal snapshots behind Run's final
+// write so outputs are ready when completion becomes visible. Remote pushes
+// preserve their existing delays for pending finalizers.
 func (a *Agent) shouldDelayTerminalStatus(status ir.Status) bool {
 	switch status {
 	case ir.Waiting:
 		return true
 	case ir.Failed, ir.Aborted, ir.Succeeded, ir.PartiallySucceeded, ir.Rejected:
-		// Local persistence must wait for Run's final write so outputs and the
-		// terminal status become visible together. Remote status pushes retain
-		// their existing finalizer-specific delay behavior.
 		if a.statusPusher == nil {
 			return true
 		}
