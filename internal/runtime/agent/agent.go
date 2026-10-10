@@ -1318,6 +1318,12 @@ func (a *Agent) shouldDelayTerminalStatus(status ir.Status) bool {
 	case ir.Waiting:
 		return true
 	case ir.Failed, ir.Aborted, ir.Succeeded, ir.PartiallySucceeded, ir.Rejected:
+		// Local persistence must wait for Run's final write so outputs and the
+		// terminal status become visible together. Remote status pushes retain
+		// their existing finalizer-specific delay behavior.
+		if a.statusPusher == nil {
+			return true
+		}
 		if a.reporter != nil && a.reporter.selectMailConfig(a.dag, ir.DAGRunStatus{Status: status}, nil) != nil {
 			return true
 		}
