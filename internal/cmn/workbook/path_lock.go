@@ -14,11 +14,16 @@ import (
 	"github.com/dagucloud/dagu/v2/internal/cmn/fileutil"
 )
 
+// workbookPathLock admits one write transaction at a time on one file.
+// refs counts the holder and the waiters, so an idle entry can be dropped.
 type workbookPathLock struct {
 	token chan struct{}
 	refs  int
 }
 
+// workbookPathLocks serializes write transactions on each file within this
+// process, so concurrent writers do not save over each other's changes.
+// Other processes are not coordinated.
 var workbookPathLocks = struct {
 	sync.Mutex
 	entries map[string]*workbookPathLock
@@ -26,10 +31,10 @@ var workbookPathLocks = struct {
 	entries: make(map[string]*workbookPathLock),
 }
 
-func acquireWorkbookPathLock(ctx context.Context, path string) (func(), error) {
-	return acquireWorkbookPathLockKey(ctx, workbookPathLockKey(path))
-}
-
+// acquireWorkbookPathLocks holds the files that paths name until the returned
+// release runs. Paths naming one file count once, and files are taken in a
+// fixed order so two callers never deadlock. Empty paths are ignored. When ctx
+// ends first, nothing stays held.
 func acquireWorkbookPathLocks(ctx context.Context, paths ...string) (func(), error) {
 	keys := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
@@ -97,6 +102,8 @@ func releaseWorkbookPathLock(key string, entry *workbookPathLock, held bool) {
 	workbookPathLocks.Unlock()
 }
 
+// workbookPathLockKey names the file a path reaches: symbolic links are
+// resolved and, where the filesystem ignores case, case is folded.
 func workbookPathLockKey(path string) string {
 	if absolute, err := filepath.Abs(path); err == nil {
 		path = absolute

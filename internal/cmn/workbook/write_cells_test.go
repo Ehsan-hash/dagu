@@ -240,25 +240,11 @@ func TestWriteCellsOutputLeavesTheTemplateAlone(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsupportedFormat)
 }
 
-func TestWriteCellsWaitsForOutputTransaction(t *testing.T) {
+func TestWriteCellsWaitsForOutput(t *testing.T) {
+	t.Parallel()
 	path := templateBook(t)
 	output := filepath.Join(t.TempDir(), "filled.xlsx")
-	entered := make(chan struct{})
-	releaseAttempt := make(chan struct{})
-	ownerDone := make(chan error, 1)
-	go func() {
-		_, err := withLock(context.Background(), output, LockOptions{}, func() (*struct{}, error) {
-			close(entered)
-			<-releaseAttempt
-			return nil, nil
-		})
-		ownerDone <- err
-	}()
-	t.Cleanup(func() {
-		close(releaseAttempt)
-		require.NoError(t, <-ownerDone)
-	})
-	<-entered
+	holdWorkbook(t, output)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
