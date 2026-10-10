@@ -184,6 +184,125 @@ func TestWithLockSymlinkAliasesShareTransaction(t *testing.T) {
 	assert.False(t, waiterRan)
 }
 
+func TestWithLockNestedMissingAncestorAliasesShareTransaction(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	aliasDir := filepath.Join(root, "alias")
+	require.NoError(t, os.Mkdir(realDir, 0o755))
+	if err := os.Symlink(realDir, aliasDir); err != nil {
+		t.Skipf("symbolic links are not supported here: %v", err)
+	}
+	ownerPath := filepath.Join(aliasDir, "new", "book.xlsx")
+	waiterPath := filepath.Join(realDir, "new", "book.xlsx")
+
+	entered := make(chan struct{})
+	releaseAttempt := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), ownerPath, LockOptions{}, func() (*struct{}, error) {
+			close(entered)
+			<-releaseAttempt
+			return nil, nil
+		})
+		ownerDone <- err
+	}()
+	t.Cleanup(func() {
+		close(releaseAttempt)
+		require.NoError(t, <-ownerDone)
+	})
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	waiterRan := false
+	_, err := withLock(ctx, waiterPath, LockOptions{}, func() (*struct{}, error) {
+		waiterRan = true
+		return nil, nil
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.False(t, waiterRan)
+}
+
+func TestWithLockCaseAliasesFollowFilesystemSemantics(t *testing.T) {
+	dir := t.TempDir()
+	upper := filepath.Join(dir, "Artifact.xlsx")
+	lower := filepath.Join(dir, "artifact.xlsx")
+	require.NoError(t, os.WriteFile(upper, []byte("workbook"), 0o600))
+
+	upperInfo, err := os.Lstat(upper)
+	require.NoError(t, err)
+	lowerInfo, lowerErr := os.Lstat(lower)
+	if lowerErr == nil && os.SameFile(upperInfo, lowerInfo) {
+		entered := make(chan struct{})
+		releaseAttempt := make(chan struct{})
+		ownerDone := make(chan error, 1)
+		go func() {
+			_, err := withLock(context.Background(), upper, LockOptions{}, func() (*struct{}, error) {
+				close(entered)
+				<-releaseAttempt
+				return nil, nil
+			})
+			ownerDone <- err
+		}()
+		t.Cleanup(func() {
+			close(releaseAttempt)
+			require.NoError(t, <-ownerDone)
+		})
+		<-entered
+
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		waiterRan := false
+		_, err := withLock(ctx, lower, LockOptions{}, func() (*struct{}, error) {
+			waiterRan = true
+			return nil, nil
+		})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.False(t, waiterRan)
+		return
+	}
+	require.ErrorIs(t, lowerErr, os.ErrNotExist)
+	assert.NotEqual(t, workbookPathLockKey(upper), workbookPathLockKey(lower))
+}
+
+func TestWithLockMultiplePathsAcquireInEitherOrder(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.xlsx")
+	pathB := filepath.Join(dir, "b.xlsx")
+	done := make(chan error, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for _, paths := range [][]string{{pathA, pathB}, {pathB, pathA}} {
+		go func(paths []string) {
+			release, err := acquireWorkbookPathLocks(ctx, paths...)
+			if err == nil {
+				release()
+			}
+			done <- err
+		}(paths)
+	}
+	assert.NoError(t, <-done)
+	assert.NoError(t, <-done)
+}
+
+func TestWithLockMultiplePathsCancellationReleasesPartialAcquisition(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.xlsx")
+	pathB := filepath.Join(dir, "b.xlsx")
+	releaseB, err := acquireWorkbookPathLock(context.Background(), pathB)
+	require.NoError(t, err)
+	t.Cleanup(releaseB)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = acquireWorkbookPathLocks(ctx, pathA, pathB)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	releaseA, err := acquireWorkbookPathLock(context.Background(), pathA)
+	require.NoError(t, err)
+	releaseA()
+}
+
 func TestWithLockReclaimsIdlePathEntry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reclaimed.xlsx")
 	_, err := withLock(context.Background(), path, LockOptions{}, func() (*struct{}, error) {

@@ -5,7 +5,13 @@ package workbook
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -22,10 +28,45 @@ var workbookPathLocks = struct {
 }
 
 func acquireWorkbookPathLock(ctx context.Context, path string) (func(), error) {
+	return acquireWorkbookPathLockKey(ctx, workbookPathLockKey(path))
+}
+
+func acquireWorkbookPathLocks(ctx context.Context, paths ...string) (func(), error) {
+	keys := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		keys[workbookPathLockKey(path)] = struct{}{}
+	}
+	ordered := make([]string, 0, len(keys))
+	for key := range keys {
+		ordered = append(ordered, key)
+	}
+	sort.Strings(ordered)
+
+	releases := make([]func(), 0, len(ordered))
+	for _, key := range ordered {
+		release, err := acquireWorkbookPathLockKey(ctx, key)
+		if err != nil {
+			for _, release := range slices.Backward(releases) {
+				release()
+			}
+			return nil, err
+		}
+		releases = append(releases, release)
+	}
+	return func() {
+		for _, release := range slices.Backward(releases) {
+			release()
+		}
+	}, nil
+}
+
+func acquireWorkbookPathLockKey(ctx context.Context, key string) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	key := workbookPathLockKey(path)
 	workbookPathLocks.Lock()
 	entry := workbookPathLocks.entries[key]
 	if entry == nil {
@@ -59,13 +100,84 @@ func releaseWorkbookPathLock(key string, entry *workbookPathLock, held bool) {
 
 func workbookPathLockKey(path string) string {
 	path = absoluteCleanPath(path)
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return absoluteCleanPath(resolved)
+	if resolved, err := resolveExistingAncestor(path); err == nil {
+		path = resolved
 	}
-	if resolved, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
-		return filepath.Join(resolved, filepath.Base(path))
+	if filesystemIsCaseInsensitive(path) {
+		path = strings.ToLower(path)
 	}
 	return path
+}
+
+func resolveExistingAncestor(path string) (string, error) {
+	suffix := make([]string, 0)
+	current := path
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for _, part := range slices.Backward(suffix) {
+				resolved = filepath.Join(resolved, part)
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
+}
+
+func filesystemIsCaseInsensitive(path string) bool {
+	dir := filepath.Dir(path)
+	for {
+		info, err := os.Lstat(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+			continue
+		}
+		if err == nil {
+			name := filepath.Base(dir)
+			if alternate, ok := alternateASCIICase(name); ok {
+				alternateInfo, alternateErr := os.Lstat(filepath.Join(filepath.Dir(dir), alternate))
+				switch {
+				case alternateErr == nil:
+					return os.SameFile(info, alternateInfo)
+				case errors.Is(alternateErr, os.ErrNotExist):
+					return false
+				}
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+}
+
+func alternateASCIICase(value string) (string, bool) {
+	bytes := []byte(value)
+	for idx, ch := range bytes {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			bytes[idx] = ch - ('a' - 'A')
+			return string(bytes), true
+		case ch >= 'A' && ch <= 'Z':
+			bytes[idx] = ch + ('a' - 'A')
+			return string(bytes), true
+		}
+	}
+	return "", false
 }
 
 func absoluteCleanPath(path string) string {

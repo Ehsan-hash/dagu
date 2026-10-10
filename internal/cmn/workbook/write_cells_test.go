@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -237,6 +238,37 @@ func TestWriteCellsOutputLeavesTheTemplateAlone(t *testing.T) {
 
 	_, err = WriteCells(context.Background(), path, WriteCellsOptions{Output: filepath.Join(filepath.Dir(path), "out.csv"), Cells: map[string]CellValue{"B1": {Value: 1}}})
 	require.ErrorIs(t, err, ErrUnsupportedFormat)
+}
+
+func TestWriteCellsWaitsForOutputTransaction(t *testing.T) {
+	path := templateBook(t)
+	output := filepath.Join(t.TempDir(), "filled.xlsx")
+	entered := make(chan struct{})
+	releaseAttempt := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := withLock(context.Background(), output, LockOptions{}, func() (*struct{}, error) {
+			close(entered)
+			<-releaseAttempt
+			return nil, nil
+		})
+		ownerDone <- err
+	}()
+	t.Cleanup(func() {
+		close(releaseAttempt)
+		require.NoError(t, <-ownerDone)
+	})
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err := WriteCells(ctx, path, WriteCellsOptions{
+		Output: output,
+		Cells:  map[string]CellValue{"B1": {Value: "Acme"}},
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	_, err = os.Stat(output)
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestWriteCellsDryRunAndErrors(t *testing.T) {
