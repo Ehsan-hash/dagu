@@ -96,6 +96,31 @@ func TestPathLockPartialRelease(t *testing.T) {
 	requireProceeds(t, pathA)
 }
 
+func TestPathLockLogsWait(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "orders.xlsx")
+	release := holdWorkbook(t, path)
+
+	logged := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		opts := LockOptions{Log: func(msg string) { logged <- msg }}
+		_, err := withLock(context.Background(), path, opts, func() (*struct{}, error) {
+			return nil, nil
+		})
+		done <- err
+	}()
+	select {
+	case msg := <-logged:
+		assert.Equal(t, "orders.xlsx is being written by another step; waiting for it to finish", msg)
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "a waiting write logged nothing")
+	}
+
+	release()
+	require.NoError(t, <-done)
+}
+
 // holdWorkbook opens a write transaction on path that stays open until the
 // returned release runs or the test ends.
 func holdWorkbook(t *testing.T, path string) (release func()) {

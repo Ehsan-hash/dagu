@@ -116,7 +116,7 @@ func replaceAtomically(path, ext string, fill func(tmp string) error) error {
 // sequences in this process that write path, or any of extraPaths such as
 // a separate output, wait until it ends.
 func withLock[T any](ctx context.Context, path string, opts LockOptions, attempt func() (*T, error), extraPaths ...string) (*T, error) {
-	release, err := acquireWorkbookPathLocks(ctx, append([]string{path}, extraPaths...)...)
+	release, err := acquireWorkbookPathLocks(ctx, opts.Log, append([]string{path}, extraPaths...)...)
 	if err != nil {
 		return nil, err
 	}

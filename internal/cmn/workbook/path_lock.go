@@ -5,6 +5,7 @@ package workbook
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -34,14 +35,15 @@ var workbookPathLocks = struct {
 // acquireWorkbookPathLocks holds the files that paths name until the returned
 // release runs. Paths naming one file count once, and files are taken in a
 // fixed order so two callers never deadlock. Empty paths are ignored. When ctx
-// ends first, nothing stays held.
-func acquireWorkbookPathLocks(ctx context.Context, paths ...string) (func(), error) {
-	keys := make(map[string]struct{}, len(paths))
+// ends first, nothing stays held. log, when set, receives one line for each
+// file that another write holds.
+func acquireWorkbookPathLocks(ctx context.Context, log func(string), paths ...string) (func(), error) {
+	keys := make(map[string]string, len(paths))
 	for _, path := range paths {
 		if path == "" {
 			continue
 		}
-		keys[workbookPathLockKey(path)] = struct{}{}
+		keys[workbookPathLockKey(path)] = path
 	}
 	ordered := make([]string, 0, len(keys))
 	for key := range keys {
@@ -51,7 +53,7 @@ func acquireWorkbookPathLocks(ctx context.Context, paths ...string) (func(), err
 
 	releases := make([]func(), 0, len(ordered))
 	for _, key := range ordered {
-		release, err := acquireWorkbookPathLockKey(ctx, key)
+		release, err := acquireWorkbookPathLockKey(ctx, key, keys[key], log)
 		if err != nil {
 			for _, release := range slices.Backward(releases) {
 				release()
@@ -67,7 +69,7 @@ func acquireWorkbookPathLocks(ctx context.Context, paths ...string) (func(), err
 	}, nil
 }
 
-func acquireWorkbookPathLockKey(ctx context.Context, key string) (func(), error) {
+func acquireWorkbookPathLockKey(ctx context.Context, key, path string, log func(string)) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -82,12 +84,19 @@ func acquireWorkbookPathLockKey(ctx context.Context, key string) (func(), error)
 	workbookPathLocks.Unlock()
 
 	select {
-	case <-ctx.Done():
-		releaseWorkbookPathLock(key, entry, false)
-		return nil, ctx.Err()
 	case <-entry.token:
-		return func() { releaseWorkbookPathLock(key, entry, true) }, nil
+	default:
+		if log != nil {
+			log(fmt.Sprintf("%s is being written by another step; waiting for it to finish", Base(path)))
+		}
+		select {
+		case <-ctx.Done():
+			releaseWorkbookPathLock(key, entry, false)
+			return nil, ctx.Err()
+		case <-entry.token:
+		}
 	}
+	return func() { releaseWorkbookPathLock(key, entry, true) }, nil
 }
 
 func releaseWorkbookPathLock(key string, entry *workbookPathLock, held bool) {
